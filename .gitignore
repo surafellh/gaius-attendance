@@ -1,0 +1,8 @@
+node_modules
+dist
+.env*
+!.env.example
+
+# personal data – never commit
+supabase/import/
+supabase/gaius_setup.sql
