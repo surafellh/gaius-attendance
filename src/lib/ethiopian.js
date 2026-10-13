@@ -74,3 +74,19 @@ export function fmtGreg(d) {
 }
 
 export const SEMESTERS = semesterList('Meskerem 2018', 12);
+
+export const ET_MONTHS_AM = ['መስከረም','ጥቅምት','ኅዳር','ታኅሣሥ','ጥር','የካቲት','መጋቢት','ሚያዝያ','ግንቦት','ሰኔ','ሐምሌ','ነሐሴ','ጳጉሜ'];
+
+// group a list of ISO Sundays by Ethiopian month, keeping order
+export function groupByMonth(sundays) {
+  const out = [];
+  for (const s of sundays) {
+    const e = toEthiopian(s);
+    let g = out[out.length - 1];
+    if (!g || g.month !== e.month) { g = { month: e.month, name: ET_MONTHS[e.month], am: ET_MONTHS_AM[e.month], days: [] }; out.push(g); }
+    g.days.push({ sunday: s, day: e.day });
+  }
+  return out;
+}
+
+export const shortEt = (d) => { const e = toEthiopian(d); return `${ET_MONTHS[e.month].slice(0, 3)} ${e.day}`; };

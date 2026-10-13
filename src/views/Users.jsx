@@ -15,6 +15,7 @@ export default function Users() {
   const pending = list.filter((u) => u.role === 'pending');
   return (
     <div className="page">
+      <div><h1 className="page-title">Users</h1><p className="muted small">Approve leaders and choose what they can do.</p></div>
       {pending.length > 0 && <div className="banner">{pending.length} account{pending.length > 1 ? 's' : ''} waiting for approval.</div>}
       <div className="card flush">
         <table className="tbl">

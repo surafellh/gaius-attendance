@@ -2,63 +2,71 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, sundaysOf, SEMESTERS } from '../lib/ethiopian';
 import { CATEGORIES, SHORT, pct } from '../lib/stats';
-import { Modal } from './common';
+import { Sheet, Icon, Initials, CAT_COLOR } from './common';
 
-export default function People({ roster, people, statuses, semester, stats, profile, reload }) {
+export default function People({ roster, people, semester, stats, isAdmin, openPerson, setEditing }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
-  const [edit, setEdit] = useState(null);
-  const isAdmin = profile.role === 'admin';
   const byId = Object.fromEntries(stats.rows.map((r) => [r.id, r]));
-  const onRoster = new Set(roster.map((p) => p.id));
+  const catOf = Object.fromEntries(roster.map((r) => [r.id, r.category]));
 
+  const count = (c) => (c === 'All' ? people.length : c === 'Not listed' ? people.filter((p) => !catOf[p.id]).length : roster.filter((r) => r.category === c).length);
   const list = people
-    .map((p) => ({ ...p, category: roster.find((r) => r.id === p.id)?.category || null }))
-    .filter((p) => (cat === 'All' ? true : cat === 'Not listed' ? !onRoster.has(p.id) : p.category === cat))
-    .filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.phone || '').includes(q));
+    .map((p) => ({ ...p, category: catOf[p.id] || null }))
+    .filter((p) => (cat === 'All' ? true : cat === 'Not listed' ? !p.category : p.category === cat))
+    .filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.phone || '').replace(/\s/g, '').includes(q.replace(/\s/g, '')));
 
   return (
     <div className="page">
-      <div className="toolbar">
-        <input className="search" placeholder="Search name or phone…" value={q} onChange={(e) => setQ(e.target.value)} />
-        {isAdmin && <button className="btn" onClick={() => setEdit({ new: true })}>+ Person</button>}
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">People</h1>
+          <p className="muted small">{people.length} on the list, statuses for {semester}</p>
+        </div>
+        {isAdmin && <button className="btn gold" onClick={() => setEditing({ new: true })}><Icon.plus /> Add person</button>}
       </div>
-      <div className="seg wrap">
-        {['All', ...CATEGORIES, 'Not listed'].map((c) => (
-          <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>
-            {SHORT[c] || c} <small>{c === 'All' ? people.length : c === 'Not listed' ? people.length - onRoster.size : roster.filter((r) => r.category === c).length}</small>
-          </button>
-        ))}
+      <label className="search">
+        <Icon.search />
+        <span className="sr-only">Search</span>
+        <input placeholder="Search by name or phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+      </label>
+      <div className="scroll-x">
+        <div className="seg">
+          {['All', ...CATEGORIES, 'Not listed'].map((c) => (
+            <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{SHORT[c] || c} <span className="faint">{count(c)}</span></button>
+          ))}
+        </div>
       </div>
-      <div className="card flush">
-        <table className="tbl people-tbl">
-          <thead><tr><th>#</th><th>Name</th><th>Status · {semester}</th><th className="hide-sm">Responsible</th><th className="hide-sm">Joined</th><th>Semester %</th></tr></thead>
-          <tbody>
-            {list.map((p) => (
-              <tr key={p.id} onClick={() => setEdit(p)} className="clickable">
-                <td className="muted">{p.sn}</td>
-                <td><b>{p.name}</b><div className="muted small">{p.phone}</div></td>
-                <td>
-                  {p.category ? SHORT[p.category] : <span className="muted">—</span>}
-                  {p.category === 'New Comer' && <em className={p.nc_active ? 'tag ok' : 'tag'}>{p.nc_active ? 'Active' : 'Inactive'}</em>}
-                </td>
-                <td className="hide-sm">{p.responsible}</td>
-                <td className="hide-sm">{p.week_joined ? etLabel(p.week_joined, true) : ''}</td>
-                <td>{pct(byId[p.id]?.pct)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="people-grid">
+        {list.map((p) => {
+          const s = byId[p.id];
+          return (
+            <button key={p.id} className="prow" style={{ border: 0, textAlign: 'left', padding: 0 }}
+              onClick={() => (s ? openPerson(p.id) : isAdmin ? setEditing(p) : null)}>
+              <div className="prow-main" style={{ padding: 12 }}>
+                <Initials name={p.name} category={p.category} />
+                <span className="pinfo">
+                  <span className="pname">{p.name}</span>
+                  <span className="pmeta">
+                    {p.category
+                      ? <><span className="dot" style={{ background: CAT_COLOR[p.category] }} />{SHORT[p.category]}</>
+                      : <span>No status for {semester}</span>}
+                    {p.category === 'New Comer' && <span className={`tag ${p.nc_active ? 'ok' : ''}`}>{p.nc_active ? 'Active' : 'Inactive'}</span>}
+                    {p.week_joined && <span>joined {etLabel(p.week_joined)}</span>}
+                  </span>
+                </span>
+                {s && <span className="num" style={{ fontWeight: 800, color: s.pct >= .6 ? 'var(--present)' : s.pct < .3 ? 'var(--absent)' : 'var(--muted)' }}>{pct(s.pct)}</span>}
+              </div>
+            </button>
+          );
+        })}
       </div>
-      {edit && (
-        <Editor person={edit} statuses={statuses} people={people} semester={semester} isAdmin={isAdmin}
-          onClose={() => setEdit(null)} saved={() => { setEdit(null); reload(); }} />
-      )}
+      {list.length === 0 && <div className="card empty">Nobody matches “{q}”.</div>}
     </div>
   );
 }
 
-function Editor({ person, statuses, people, semester, isAdmin, onClose, saved }) {
+export function Editor({ person, statuses, people, semester, isAdmin, onClose, saved }) {
   const isNew = !!person.new;
   const own = isNew ? [] : statuses.filter((s) => s.person_id === person.id);
   const [f, setF] = useState({
@@ -67,7 +75,8 @@ function Editor({ person, statuses, people, semester, isAdmin, onClose, saved })
   });
   const [cats, setCats] = useState(() => Object.fromEntries(SEMESTERS.map((s) => [s, own.find((o) => o.semester === s)?.category || ''])));
   const [busy, setBusy] = useState(false);
-  const joinOptions = [...SEMESTERS.slice(0, 6).flatMap(sundaysOf)].filter((s) => s <= new Date().toISOString().slice(0, 10)).reverse();
+  const today = new Date().toISOString().slice(0, 10);
+  const joinOptions = SEMESTERS.slice(0, 6).flatMap(sundaysOf).filter((s) => s <= today).reverse();
 
   async function save(e) {
     e.preventDefault();
@@ -98,7 +107,7 @@ function Editor({ person, statuses, people, semester, isAdmin, onClose, saved })
   }
 
   async function remove() {
-    if (!window.confirm(`Delete ${person.name} and all their attendance? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${person.name} and all their attendance? This can't be undone.`)) return;
     const { error } = await supabase.from('people').delete().eq('id', person.id);
     if (error) return window.alert(error.message);
     saved();
@@ -106,7 +115,7 @@ function Editor({ person, statuses, people, semester, isAdmin, onClose, saved })
 
   const ro = !isAdmin;
   return (
-    <Modal title={isNew ? 'Add person' : person.name} onClose={onClose}>
+    <Sheet title={isNew ? 'Add a person' : `Edit ${person.name}`} onClose={onClose}>
       <form onSubmit={save} className="form">
         <label>Name<input disabled={ro} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>
         <div className="row2">
@@ -114,40 +123,39 @@ function Editor({ person, statuses, people, semester, isAdmin, onClose, saved })
           <label>Responsible person<input disabled={ro} value={f.responsible} onChange={(e) => setF({ ...f, responsible: e.target.value })} /></label>
         </div>
         <div className="row2">
-          <label>Week joined
+          <label>First Sunday
             <select disabled={ro} value={f.week_joined} onChange={(e) => setF({ ...f, week_joined: e.target.value })}>
-              <option value="">— (existing member)</option>
+              <option value="">Existing member (not recorded)</option>
               {f.week_joined && !joinOptions.includes(f.week_joined) && <option value={f.week_joined}>{etLabel(f.week_joined, true)}</option>}
-              {joinOptions.map((s) => <option key={s} value={s}>{etLabel(s, true)} · {fmtGreg(s)}</option>)}
+              {joinOptions.map((s) => <option key={s} value={s}>{etLabel(s, true)} ({fmtGreg(s)})</option>)}
             </select>
           </label>
-          <label>New comer active?
+          <label>As a new comer
             <select disabled={ro} value={f.nc_active ? 'yes' : 'no'} onChange={(e) => setF({ ...f, nc_active: e.target.value === 'yes' })}>
               <option value="yes">Active</option><option value="no">Inactive</option>
             </select>
           </label>
         </div>
         <fieldset>
-          <legend>Status per semester</legend>
+          <legend>Status each semester</legend>
           <div className="sem-grid">
             {SEMESTERS.slice(0, 6).map((s) => (
-              <label key={s} className={s === semester ? 'cur' : ''}>{s}
+              <label key={s} className={s === semester ? 'cur' : ''}>{s}{s === semester ? ' (shown)' : ''}
                 <select disabled={ro} value={cats[s]} onChange={(e) => setCats({ ...cats, [s]: e.target.value })}>
-                  <option value="">—</option>
+                  <option value="">Same as before</option>
                   {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                 </select>
               </label>
             ))}
           </div>
-          <p className="muted small">If a semester is blank, the latest earlier status is used.</p>
         </fieldset>
         {isAdmin ? (
           <div className="row-actions">
-            {!isNew && <button type="button" className="btn danger ghost" onClick={remove}>Delete</button>}
-            <button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            {!isNew && <button type="button" className="btn danger" onClick={remove}>Delete</button>}
+            <button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
           </div>
         ) : <p className="muted small">Only an admin can edit people.</p>}
       </form>
-    </Modal>
+    </Sheet>
   );
 }

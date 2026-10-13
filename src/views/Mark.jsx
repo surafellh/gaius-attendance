@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { etLabel, fmtGreg, latestSunday } from '../lib/ethiopian';
+import { etLabel, latestSunday } from '../lib/ethiopian';
 import { CATEGORIES, SHORT, pct } from '../lib/stats';
-import { WeekChips, Modal } from './common';
+import { WeekPicker, Sheet, Icon, Initials, Ring, CAT_COLOR } from './common';
 
-export default function Mark({ sundays, roster, people, att, saveMark, semester, reload, stats }) {
+export default function MarkView({ sundays, roster, people, att, saveMark, semester, reload, stats, counts, openPerson }) {
   const defaultSunday = useMemo(() => {
     const t = latestSunday();
     const past = sundays.filter((s) => s <= t);
@@ -19,106 +19,129 @@ export default function Mark({ sundays, roster, people, att, saveMark, semester,
   const day = sundays.includes(sunday) ? sunday : defaultSunday;
   const rec = (id) => att[`${id}|${day}`] || {};
 
-  const counts = useMemo(() => {
-    const c = {};
-    for (const k of CATEGORIES) {
-      const list = roster.filter((p) => p.category === k);
-      const pres = list.filter((p) => rec(p.id).status === 'Present').length;
-      const marked = list.filter((p) => rec(p.id).status).length;
-      c[k] = { total: list.length, pres, marked };
-    }
-    return c;
-  }, [roster, att, day]); // eslint-disable-line
+  const counts6 = useMemo(() => Object.fromEntries(CATEGORIES.map((k) => {
+    const list = roster.filter((p) => p.category === k);
+    return [k, {
+      total: list.length,
+      pres: list.filter((p) => rec(p.id).status === 'Present').length,
+      marked: list.filter((p) => rec(p.id).status).length,
+    }];
+  })), [roster, att, day]); // eslint-disable-line
 
   const list = roster
     .filter((p) => (q ? p.name.toLowerCase().includes(q.toLowerCase()) : p.category === cat))
     .sort((a, b) => (a.sn ?? 9999) - (b.sn ?? 9999));
 
   const totalPresent = roster.filter((p) => rec(p.id).status === 'Present').length;
+  const totalMarked = roster.filter((p) => rec(p.id).status).length;
   const unmarked = list.filter((p) => !rec(p.id).status);
 
   async function markRestAbsent() {
     if (!unmarked.length) return;
-    if (!window.confirm(`Mark ${unmarked.length} unmarked ${q ? 'people' : SHORT[cat]} as Absent for ${etLabel(day)}?`)) return;
+    if (!window.confirm(`Mark ${unmarked.length} unmarked ${q ? 'people' : SHORT[cat].toLowerCase()} as absent for ${etLabel(day)}?`)) return;
     const rows = unmarked.map((p) => ({ person_id: p.id, sunday: day, status: 'Absent', updated_at: new Date().toISOString() }));
     const { error } = await supabase.from('attendance').upsert(rows);
     if (error) return window.alert(error.message);
     reload();
   }
 
+  const toggle = (p, s) => saveMark(p.id, day, { status: rec(p.id).status === s ? null : s });
+
   return (
     <div className="page">
-      <WeekChips sundays={sundays} value={day} onChange={(s) => s && setSunday(s)} held={stats.heldSet} />
+      <WeekPicker sundays={sundays} value={day} onChange={(s) => s && setSunday(s)} held={stats.heldSet} counts={counts} />
 
-      <div className="day-head">
-        <div>
-          <h2>{etLabel(day, true)}</h2>
-          <div className="muted">{fmtGreg(day)} · {semester}</div>
+      <section className="card mark-summary">
+        <Ring value={totalPresent} total={roster.length} label="present" />
+        <div className="mark-stats">
+          <div className="line"><b>Marked so far</b><span className="muted">{totalMarked} of {roster.length}</span></div>
+          <div className="progress" aria-hidden="true">
+            {CATEGORIES.map((k) => counts6[k].pres ? <span key={k} style={{ flex: counts6[k].pres, background: CAT_COLOR[k] }} /> : null)}
+            <span style={{ flex: Math.max(roster.length - totalPresent, 0), background: 'transparent' }} />
+          </div>
+          <div className="line small muted">
+            <span>{totalPresent} present, {totalMarked - totalPresent} absent</span>
+            <span>{roster.length - totalMarked} to go</span>
+          </div>
         </div>
-        <div className="big-count"><b>{totalPresent}</b><span>present</span></div>
-      </div>
+      </section>
 
-      <div className="cat-tabs">
-        {CATEGORIES.map((k) => (
-          <button key={k} className={!q && cat === k ? 'on' : ''} onClick={() => { setCat(k); setQ(''); }}>
-            <span>{SHORT[k]}</span>
-            <small>{counts[k].pres}/{counts[k].total}{counts[k].marked ? ` · ${pct(counts[k].pres / counts[k].marked)}` : ''}</small>
-          </button>
-        ))}
+      <div className="scroll-x">
+        <div className="cat-pills" role="tablist" aria-label="Category">
+          {CATEGORIES.map((k) => {
+            const c = counts6[k];
+            return (
+              <button key={k} role="tab" aria-selected={!q && cat === k} className={`cat-pill ${!q && cat === k ? 'on' : ''}`}
+                onClick={() => { setCat(k); setQ(''); }}>
+                <span className="cp-top"><span className="dot" style={{ background: CAT_COLOR[k] }} />{SHORT[k]}</span>
+                <span className="cp-n">{c.pres} of {c.total}{c.marked ? `, ${pct(c.pres / c.marked)}` : ''}</span>
+                <span className="bar"><span style={{ width: `${c.total ? (c.marked / c.total) * 100 : 0}%`, background: c.marked === c.total && c.total ? 'var(--present)' : 'var(--marigold)' }} /></span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="toolbar">
-        <input className="search" placeholder="Search anyone…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="btn" onClick={() => setAdding(true)}>+ New comer</button>
+        <label className="search">
+          <Icon.search />
+          <span className="sr-only">Search</span>
+          <input placeholder="Find anyone…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
       </div>
 
-      <ul className="people-list">
-        {list.map((p, i) => {
+      <ul className="plist">
+        {list.map((p) => {
           const r = rec(p.id);
           const isOpen = open === p.id;
           return (
-            <li key={p.id} className={`person ${r.status === 'Present' ? 'is-p' : r.status === 'Absent' ? 'is-a' : ''}`}>
-              <div className="person-row">
-                <button className="person-info" onClick={() => setOpen(isOpen ? null : p.id)}>
-                  <span className="idx">{i + 1}</span>
+            <li key={p.id} className="prow">
+              <div className="prow-main">
+                <Initials name={p.name} category={p.category} />
+                <button className="pinfo" onClick={() => setOpen(isOpen ? null : p.id)} aria-expanded={isOpen}>
                   <span className="pname">{p.name}</span>
                   <span className="pmeta">
-                    {q && <em>{SHORT[p.category]}</em>}
-                    {p.category === 'New Comer' && <em className={p.nc_active ? 'tag ok' : 'tag'}>{p.nc_active ? 'Active' : 'Inactive'}</em>}
-                    {p.responsible && <em>· {p.responsible}</em>}
-                    {r.called && <em className="tag call">Called</em>}
-                    {r.reason && <em title={r.reason}>· “{r.reason}”</em>}
+                    {q && <span>{SHORT[p.category]}</span>}
+                    {p.category === 'New Comer' && <span className={`tag ${p.nc_active ? 'ok' : ''}`}>{p.nc_active ? 'Active' : 'Inactive'}</span>}
+                    {p.responsible && <span>with {p.responsible}</span>}
+                    {r.called && <span className="tag gold"><Icon.phone width="11" height="11" /> Called</span>}
+                    {r.reason && <span className="tag">“{r.reason}”</span>}
                   </span>
                 </button>
                 <div className="pa">
-                  <button className={r.status === 'Present' ? 'p on' : 'p'}
-                    onClick={() => saveMark(p.id, day, { status: r.status === 'Present' ? null : 'Present' })}>P</button>
-                  <button className={r.status === 'Absent' ? 'a on' : 'a'}
-                    onClick={() => saveMark(p.id, day, { status: r.status === 'Absent' ? null : 'Absent' })}>A</button>
+                  <button className={`p ${r.status === 'Present' ? 'on' : ''}`} onClick={() => toggle(p, 'Present')}
+                    aria-pressed={r.status === 'Present'} aria-label={`${p.name} present`}><Icon.check /></button>
+                  <button className={`a ${r.status === 'Absent' ? 'on' : ''}`} onClick={() => toggle(p, 'Absent')}
+                    aria-pressed={r.status === 'Absent'} aria-label={`${p.name} absent`}><Icon.x /></button>
                 </div>
               </div>
               {isOpen && (
-                <div className="person-extra">
+                <div className="prow-extra">
                   <label className="check">
                     <input type="checkbox" checked={!!r.called} onChange={(e) => saveMark(p.id, day, { called: e.target.checked })} />
                     Called
                   </label>
-                  <input className="reason" placeholder="Reason (optional)" defaultValue={r.reason || ''}
+                  <input placeholder="Reason, e.g. travelling" defaultValue={r.reason || ''} aria-label="Reason"
                     onBlur={(e) => e.target.value !== (r.reason || '') && saveMark(p.id, day, { reason: e.target.value || null })} />
-                  {p.phone && p.phone.length > 5 && <a className="btn ghost small" href={`tel:${p.phone.replace(/\s/g, '')}`}>Call {p.phone}</a>}
+                  <button className="btn ghost small" onClick={() => openPerson(p.id)}>History</button>
+                  {p.phone && p.phone.replace(/\D/g, '').length > 6 && (
+                    <a className="icon-btn call" href={`tel:${p.phone.replace(/\s/g, '')}`} aria-label={`Call ${p.name}`}><Icon.phone /></a>
+                  )}
                 </div>
               )}
             </li>
           );
         })}
-        {list.length === 0 && <li className="muted empty">Nobody here.</li>}
+        {list.length === 0 && <li className="empty">{q ? `Nobody called “${q}” this semester.` : 'Nobody in this group this semester.'}</li>}
       </ul>
 
       {unmarked.length > 0 && (
         <button className="btn ghost wide" onClick={markRestAbsent}>
-          Mark the {unmarked.length} unmarked as Absent
+          Mark the {unmarked.length} unmarked {q ? '' : SHORT[cat].toLowerCase()} as absent
         </button>
       )}
+
+      <button className="btn gold fab" onClick={() => setAdding(true)}><Icon.plus /> New comer</button>
 
       {adding && (
         <NewComer onClose={() => setAdding(false)} day={day} semester={semester} people={people}
@@ -146,14 +169,14 @@ function NewComer({ onClose, day, semester, people, saved }) {
     saved();
   }
   return (
-    <Modal title={`Register new comer · ${etLabel(day)}`} onClose={onClose}>
+    <Sheet title="Register a new comer" onClose={onClose}>
       <form onSubmit={save} className="form">
-        <label>Name<input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
+        <label>Name<input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>
         <label>Phone<input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></label>
-        <label>Responsible person<input value={f.responsible} onChange={(e) => setF({ ...f, responsible: e.target.value })} /></label>
-        <p className="muted small">They'll be added as an active New Comer, joined {etLabel(day, true)}, and marked Present.</p>
-        <button className="btn wide" disabled={busy}>{busy ? 'Saving…' : 'Register'}</button>
+        <label>Who brought them / follows up<input value={f.responsible} onChange={(e) => setF({ ...f, responsible: e.target.value })} /></label>
+        <p className="muted small">They join as an active new comer on {etLabel(day, true)} and are marked present.</p>
+        <button className="btn gold wide" disabled={busy}>{busy ? 'Registering…' : 'Register'}</button>
       </form>
-    </Modal>
+    </Sheet>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { Mark } from './common';
 
 export default function Auth() {
   const [mode, setMode] = useState('in');
@@ -19,10 +20,11 @@ export default function Auth() {
   }
 
   return (
-    <div className="center auth">
-      <div className="card narrow">
-        <div className="brand big"><span className="logo">GG</span>
-          <div><div className="title">Gaius Gerji Center</div><div className="sub">Attendance follow-up</div></div>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="brand">
+          <Mark />
+          <div><div className="brand-name">Gaius Gerji</div><div className="brand-sub">Sunday attendance</div></div>
         </div>
         <form onSubmit={submit} className="form">
           {mode === 'up' && <label>Full name<input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>}
@@ -30,10 +32,10 @@ export default function Auth() {
           <label>Password<input type="password" minLength={6} autoComplete={mode === 'in' ? 'current-password' : 'new-password'}
             value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required /></label>
           {msg && <div className="banner">{msg}</div>}
-          <button className="btn wide" disabled={busy}>{busy ? '…' : mode === 'in' ? 'Sign in' : 'Create account'}</button>
+          <button className="btn gold wide" disabled={busy}>{busy ? 'One moment…' : mode === 'in' ? 'Sign in' : 'Create account'}</button>
         </form>
-        <button className="link" onClick={() => { setMode(mode === 'in' ? 'up' : 'in'); setMsg(''); }}>
-          {mode === 'in' ? 'New leader? Create an account' : 'Have an account? Sign in'}
+        <button className="link" style={{ marginTop: 12 }} onClick={() => { setMode(mode === 'in' ? 'up' : 'in'); setMsg(''); }}>
+          {mode === 'in' ? 'New leader? Create an account' : 'Already have an account? Sign in'}
         </button>
       </div>
     </div>
