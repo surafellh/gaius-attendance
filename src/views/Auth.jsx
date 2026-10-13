@@ -12,7 +12,7 @@ export default function Auth() {
     setBusy(true); setMsg('');
     const { error, data } = mode === 'in'
       ? await supabase.auth.signInWithPassword({ email: f.email, password: f.password })
-      : await supabase.auth.signUp({ email: f.email, password: f.password, options: { data: { full_name: f.name } } });
+      : await supabase.auth.signUp({ email: f.email, password: f.password, options: { data: { full_name: f.name }, emailRedirectTo: window.location.origin } });
     setBusy(false);
     if (error) return setMsg(error.message);
     if (mode === 'up' && !data.session) setMsg('Account created. Check your email to confirm, then sign in.');
