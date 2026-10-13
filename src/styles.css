@@ -37,7 +37,7 @@ h2, h3 { margin: 0; }
   width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
   background: #fff; color: var(--accent); font-weight: 800; letter-spacing: -0.5px;
 }
-.brand .title { font-weight: 700; line-height: 1.1; }
+.brand .title { font-weight: 700; line-height: 1.1; white-space: nowrap; }
 .brand .sub { font-size: 0.78rem; opacity: 0.8; }
 .brand.big { margin-bottom: 18px; }
 .brand.big .logo { background: var(--accent); color: #fff; }
@@ -207,4 +207,6 @@ legend { font-size: .85rem; font-weight: 700; padding: 0 4px; }
   .hide-sm { display: none; }
   .row2 { grid-template-columns: 1fr; }
   .brand .sub { display: none; }
+  .brand .title { font-size: .92rem; }
+  .top-right select { max-width: 132px; }
 }

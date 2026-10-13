@@ -49,7 +49,8 @@ export function buildStats({ people, sundays, allSundays, mark, weekIdx }) {
     let run = 0, best = 0;
     for (const s of before) { run = mark(p.id, s) === 'Present' ? run + 1 : 0; best = Math.max(best, run); }
     // 6-month score since joining (182 days, across semesters)
-    const join = p.week_joined || allSundays[0];
+    // no recorded join week (existing people): count from their first Sunday with any mark
+    const join = p.week_joined || allSundays.find((x) => heldSet.has(x) && mark(p.id, x)) || allSundays[0];
     const end = new Date(Date.parse(join) + 182 * 86400000).toISOString().slice(0, 10);
     const win = allSundays.filter((s) => heldSet.has(s) && s >= join && s < end && (!thisWeek || s <= thisWeek));
     const sixPresent = win.filter((s) => mark(p.id, s) === 'Present').length;
