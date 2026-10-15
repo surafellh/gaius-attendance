@@ -1,13 +1,14 @@
 // Attendance rules for Gaius Gerji
 // • Every Sunday stores a snapshot of each person's group and (for new comers) active flag,
 //   so old percentages never change when someone's status changes later.
-// • Overall % counts Leaders, Senior Leaders, Members, Active Informal Members and ACTIVE new comers.
+// • Overall % counts Leaders, Members, Active Informal Members and ACTIVE new comers.
+//   Senior leaders are welcome but are not part of the % or the leaders count.
 // • New comers: active from their first visit; 4 absences in a row → inactive; 3 Sundays in a row → active again.
 // • Promising new comer: ≥50% of Sundays since joining AND at least one 4-in-a-row streak.
 
 export const CATEGORIES = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'New Comer'];
-export const CORE = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member'];
-export const FOLLOW_GROUPS = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Active New Comer'];
+export const CORE = ['Leader', 'Member', 'Active Informal Member'];
+export const FOLLOW_GROUPS = ['Leader', 'Member', 'Active Informal Member', 'Active New Comer'];
 export const SHORT = {
   'Leader': 'Leaders', 'Senior Leader': 'Senior leaders', 'Member': 'Members',
   'Active Informal Member': 'Active informal', 'Inactive Informal Member': 'Inactive informal',
@@ -101,5 +102,29 @@ export function personFacts(p, marks = {}, held, s, semesterStart) {
     lastSeen: [...upto].reverse().find((d) => marks[d]?.status === 'Present'),
     firstPresent,
     promising: p.category === 'New Comer' && since.length >= 4 && sincePresent / since.length >= 0.5 && best >= 4,
+  };
+}
+
+const DAY = 86400000;
+const shift = (d, days) => new Date(Date.parse(d + 'T00:00:00Z') + days * DAY).toISOString().slice(0, 10);
+export const SIX_MONTHS = 182;
+
+/* Member readiness for a new comer, as of Sunday s.
+   Becoming a member takes about 6 months of steady coming, so we look at the last 6 months of meetings:
+   score = Sundays they came ÷ all Sundays held in the last 6 months (before they joined counts as missed).
+   Someone who came only 2 weeks ago therefore scores low, however faithful those 2 weeks were.
+   It also follows their own 6 months from the first visit, across semesters. */
+export function readiness(p, marks = {}, held, s, semesterStart) {
+  const from = shift(s, -SIX_MONTHS);
+  const win = held.filter((d) => d > from && d <= s);
+  const first = p.week_joined || held.find((d) => marks[d]?.status === 'Present');
+  const present = win.filter((d) => marks[d]?.status === 'Present').length;
+  const sem = semesterStart ? held.filter((d) => d >= semesterStart && d <= s) : [];
+  const semPresent = sem.filter((d) => marks[d]?.status === 'Present').length;
+  const sinceFirst = first ? held.filter((d) => d >= first && d <= s) : [];
+  return {
+    score: win.length ? present / win.length : null, present, possible: win.length,
+    semPresent, semHeld: sem.length, semRate: sem.length ? semPresent / sem.length : null,
+    first, weeksIn: sinceFirst.length, sixDone: !!first && first <= from, sixEnd: first ? shift(first, SIX_MONTHS) : null,
   };
 }

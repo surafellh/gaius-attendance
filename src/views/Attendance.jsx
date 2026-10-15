@@ -6,15 +6,16 @@ import { NewPersonSheet } from './Register';
 import { parseReport } from '../lib/report';
 
 const GROUPS = [
-  ['Leader', 'Leaders'], ['Senior Leader', 'Senior leaders'], ['Member', 'Members'], ['Active Informal Member', 'Active informal members'],
-  ['Active New Comer', 'Active new comers'], ['Inactive Informal Member', 'Inactive informal members'], ['Inactive New Comer', 'Inactive new comers'],
+  ['Leader', 'Leaders'], ['Senior Leader', 'Senior leaders'], ['Member', 'Members'],
+  ['Active Informal Member', 'Active informal members'], ['Inactive Informal Member', 'Inactive informal members'],
+  ['New Comer', 'New comers'],
 ];
 export const PROGRAM_KINDS = ['Teaching', 'Devotion', 'Discussion', 'Worship night', 'Prayer', 'Training', 'Special program', 'Fellowship / get-together', 'Outreach', 'Department program', 'No meeting'];
 
 export default function Attendance({ latest, today, rosterFor, idx, saveMark, createRoll, saveProgram, progBy, perm, openPerson, D, calInfo, reload, setError }) {
   const [month, setMonth] = useState(() => monthOf(latest));
   const [q, setQ] = useState('');
-  const [open, setOpen] = useState({ 'Inactive New Comer': false, 'Inactive Informal Member': false });
+  const [open, setOpen] = useState({ 'Inactive Informal Member': false });
   const [progFor, setProgFor] = useState(null);
   const [cal, setCal] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -34,15 +35,16 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
     for (const x of people.values()) {
       if (q && !x.p.name.toLowerCase().includes(q.toLowerCase())) continue;
       const r = lastCol(x);
-      const key = r.category === 'New Comer' ? (r.active ? 'Active New Comer' : 'Inactive New Comer') : r.category;
-      (g[key] ||= []).push(x);
+      x.active = r.active;
+      (g[r.category] ||= []).push(x);
     }
-    for (const k of Object.keys(g)) g[k].sort((a, b) => (a.p.sn ?? 1e9) - (b.p.sn ?? 1e9));
+    for (const k of Object.keys(g)) g[k].sort(k === 'New Comer'
+      ? (a, b) => (a.p.week_joined || '0').localeCompare(b.p.week_joined || '0') || (a.p.sn ?? 1e9) - (b.p.sn ?? 1e9)
+      : (a, b) => (a.p.sn ?? 1e9) - (b.p.sn ?? 1e9));
     const cs = Object.fromEntries(sundays.map((s) => [s, weekSummary(rosters[s].map(({ r }) => r))]));
     return { groups: g, colStats: cs };
   }, [rosters, sundays.join(), q, today]); // eslint-disable-line
 
-  const cycle = (st) => (st == null ? 'Present' : st === 'Present' ? 'Absent' : null);
   const e0 = { year: month.year, month: month.month };
   const canPrev = month.year > 2018 || month.month > 2;
 
@@ -69,7 +71,8 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
         <table className="att">
           <thead>
             <tr>
-              <th className="namecol" style={{ padding: '8px 12px', fontSize: '.78rem', color: 'var(--muted)' }}>Tap a Sunday for its program</th>
+              <th className="sncol">S.N</th>
+              <th className="namecol" style={{ padding: '8px 12px', fontSize: '.78rem', color: 'var(--muted)', fontWeight: 600 }}>Name <span className="desk-only">· tap a Sunday for its program</span></th>
               {sundays.map((s) => {
                 const p = progBy[s];
                 const e = toEthiopian(s);
@@ -91,10 +94,11 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
               if (!list?.length) return null;
               const collapsed = open[k] === false && !q;
               return [
-                <tr key={k} className="group-row">
+                <tr key={k} className="group-row" style={{ '--gc': CAT_COLOR[k] }}>
+                  <td className="sncol" />
                   <td className="namecol">
                     <button className="gname" style={{ border: 0, width: '100%', cursor: 'pointer' }} onClick={() => setOpen((o) => ({ ...o, [k]: o[k] === false }))} aria-expanded={!collapsed}>
-                      <span className="dot" style={{ background: CAT_COLOR[k] }} />{label} <span className="muted">({list.length})</span>
+                      <span className="dot" style={{ background: CAT_COLOR[k] }} />{label} <span className="muted">({list.length}{k === 'New Comer' ? ` · ${list.filter((x) => x.active).length} active` : ''})</span>
                       <span style={{ marginLeft: 'auto', color: 'var(--faint)' }}>{collapsed ? '▸' : '▾'}</span>
                     </button>
                   </td>
@@ -104,12 +108,13 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
                     return <td key={s} className="gstat">{s <= today && rows.length ? `${pr}/${rows.length}` : ''}</td>;
                   })}
                 </tr>,
-                ...(collapsed ? [] : list.map((x) => (
-                  <tr key={x.p.id} className={k.startsWith('Inactive') ? 'inactive-row' : ''}>
+                ...(collapsed ? [] : list.map((x, i) => (
+                  <tr key={x.p.id} className={k.startsWith('Inactive') || (k === 'New Comer' && !x.active) ? 'inactive-row' : ''}>
+                    <td className="sncol">{i + 1}</td>
                     <td className="namecol">
-                      <button className="pname-cell" style={{ '--band-c': CAT_COLOR[k] }} onClick={() => openPerson(x.p.id)}>
-                        <span className="pn">{x.p.name}</span>
-                        {(x.p.invited_by || x.p.responsible) && <span className="ps">{[x.p.invited_by && `via ${x.p.invited_by}`, x.p.responsible && `with ${x.p.responsible}`].filter(Boolean).join(' · ')}</span>}
+                      <button className="pname-cell" style={{ '--band-c': CAT_COLOR[k === 'New Comer' && !x.active ? 'Inactive New Comer' : k] }} onClick={() => openPerson(x.p.id)}>
+                        <span className="pn">{x.p.name}{k === 'New Comer' && <span className={`nc-tag ${x.active ? 'on' : ''}`}>{x.active ? 'active' : 'inactive'}</span>}</span>
+                        {(x.p.invited_by || (k === 'New Comer' && x.p.week_joined)) && <span className="ps">{[x.p.invited_by && `via ${x.p.invited_by}`, k === 'New Comer' && x.p.week_joined && `since ${etLabel(x.p.week_joined)}`].filter(Boolean).join(' · ')}</span>}
                       </button>
                     </td>
                     {sundays.map((s) => {
@@ -120,12 +125,18 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
                       const disabled = !perm.mark || s > today || progBy[s]?.kind === 'No meeting';
                       return (
                         <td key={s}>
-                          <button className={`cell ${st === 'Present' ? 'P' : st === 'Absent' ? (auto ? 'A auto' : 'A') : 'E'}`} disabled={disabled}
-                            onClick={() => saveMark(x.p.id, s, { status: cycle(st) })}
-                            aria-label={`${x.p.name}, ${etLabel(s)}: ${st || 'not marked'}`}>
+                          <span className={`cell ${st === 'Present' ? 'P' : st === 'Absent' ? (auto ? 'A auto' : 'A') : 'E'} ${disabled ? 'off' : ''}`}>
                             <span>{st === 'Present' ? '✓' : st === 'Absent' ? '✕' : ''}</span>
                             {(r.called || r.reason) && <i className="flag" title={r.reason || 'Called'} />}
-                          </button>
+                            {!disabled && (
+                              <select value={st || ''} aria-label={`${x.p.name}, ${etLabel(s)}`}
+                                onChange={(e) => saveMark(x.p.id, s, { status: e.target.value || null })}>
+                                <option value="">— Not marked</option>
+                                <option value="Present">✓ Present</option>
+                                <option value="Absent">✕ Absent</option>
+                              </select>
+                            )}
+                          </span>
                         </td>
                       );
                     })}
@@ -134,6 +145,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
               ];
             })}
             <tr className="foot">
+              <td className="sncol" />
               <td className="namecol">Attendance rate</td>
               {sundays.map((s) => <td key={s}>{s <= today && colStats[s].present ? pct(colStats[s].rate) : '–'}</td>)}
             </tr>
@@ -145,9 +157,9 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
         <span className="row"><span className="cell P"><span>✓</span></span>Present</span>
         <span className="row"><span className="cell A"><span>✕</span></span>Absent</span>
         <span className="row"><span className="cell A auto"><span>✕</span></span>Inactive new comer (absent unless they come)</span>
-        <span className="row"><span className="cell E"><span /></span>Not marked yet – tap to mark</span>
+        <span className="row"><span className="cell E"><span /></span>Not marked yet</span>
       </div>
-      <p className="muted tiny">Tap a box: empty → ✓ present → ✕ absent → empty. The rate counts leaders, members, active informal members and active new comers.</p>
+      <p className="muted tiny">Tap a box and choose Present or Absent from the list, so a stray tap never changes anything. The rate counts leaders, members, active informal members and active new comers (not senior leaders).</p>
 
       {perm.mark && <button className="btn lime fab" onClick={() => setAdding(true)}><Icon.plus /> New comer</button>}
 

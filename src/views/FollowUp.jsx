@@ -3,7 +3,7 @@ import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
 import { SHORT, pct, personFacts, counts, groupOfRow } from '../lib/stats';
 import { WeekPicker, Icon, Initials, CAT_COLOR, MiniDots, telLink } from './common';
 
-const GROUPS = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Active New Comer', 'Inactive New Comer'];
+const GROUPS = ['Leader', 'Member', 'Active Informal Member', 'Active New Comer', 'Inactive New Comer'];
 
 export default function FollowUp({ idx, latest, week, setWeek, calInfo, D, personBy, saveMark, openPerson, perm }) {
   const leaderName = (a) => (a.leader_id && personBy[a.leader_id]?.name) || a.leader_name || '—';

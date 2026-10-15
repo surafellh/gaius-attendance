@@ -78,6 +78,28 @@ export function Sheet({ title, onClose, children, head, wide }) {
   );
 }
 
+/* Right-hand panel, full window height (bottom sheet look on phones is not used: it slides in from the right everywhere) */
+export function Drawer({ title, sub, onClose, children, footer }) {
+  useEffect(() => {
+    const k = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', k);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', k); document.body.style.overflow = ''; };
+  }, [onClose]);
+  return (
+    <div className="drawer-bg" onClick={onClose}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div style={{ minWidth: 0 }}>{typeof title === 'string' ? <h3>{title}</h3> : title}{sub && <div className="small muted">{sub}</div>}</div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon.x /></button>
+        </div>
+        <div className="drawer-body">{children}</div>
+        {footer && <div className="drawer-foot">{footer}</div>}
+      </aside>
+    </div>
+  );
+}
+
 /* Calendar sheet: one semester at a time, each Sunday shaded by attendance rate.
    info(sunday) -> { rate, present, program } */
 export function CalendarSheet({ value, onPick, onClose, info, title = 'Choose a Sunday', allowFuture, extra }) {

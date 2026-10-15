@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, sundaysOf, SEMESTERS, todayIso } from '../lib/ethiopian';
 import { CATEGORIES, SHORT, ONE } from '../lib/stats';
 import { Icon, Sheet, Initials, CAT_COLOR } from './common';
+import { ProfileForm } from './Profiles';
 
 const recentSundays = () => {
   const t = todayIso();
@@ -16,6 +17,7 @@ export default function Register({ D, perm, latest, openPerson, saveMark, create
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: '', phone: '+251', invited_by: '', week_joined: latest });
   const [busy, setBusy] = useState(false);
+  const [panel, setPanel] = useState(null);
   const sundays = useMemo(recentSundays, []);
 
   const list = D.people
@@ -73,7 +75,7 @@ export default function Register({ D, perm, latest, openPerson, saveMark, create
                   <td className="small" style={{ whiteSpace: 'nowrap', padding: '0 8px' }}>{p.week_joined ? etLabel(p.week_joined, true) : <span className="faint">earlier</span>}</td>
                   <td><span className="row small" style={{ gap: 6, whiteSpace: 'nowrap', padding: '0 8px' }}><span className="dot" style={{ background: CAT_COLOR[p.category] || 'var(--line)' }} />{ONE[p.category] || '—'}{p.category === 'New Comer' && <span className={`tag ${p.nc_active ? 'ok' : ''}`}>{p.nc_active ? 'active' : 'inactive'}</span>}</span></td>
                   <td className="small" style={{ padding: '0 8px', whiteSpace: 'nowrap' }}>{p.responsible || <span className="faint">—</span>}</td>
-                  <td><button className="icon-btn" onClick={() => openPerson(p.id)} aria-label={`Open ${p.name}`}><Icon.right /></button></td>
+                  <td><button className="icon-btn" onClick={() => setPanel(p)} aria-label={`Open ${p.name}'s profile`}><Icon.right /></button></td>
                 </tr>
               ))}
               {perm.mark && !q && cat === 'All' && (
@@ -92,7 +94,7 @@ export default function Register({ D, perm, latest, openPerson, saveMark, create
         </div>
         <div className="reg-cards">
           {list.map((p) => (
-            <button key={p.id} className="list-row" style={{ border: 0, background: 'none', textAlign: 'left', width: '100%' }} onClick={() => openPerson(p.id)}>
+            <button key={p.id} className="list-row" style={{ border: 0, background: 'none', textAlign: 'left', width: '100%' }} onClick={() => setPanel(p)}>
               <span className="faint small" style={{ width: 28, textAlign: 'center' }}>{p.sn}</span>
               <Initials name={p.name} category={p.category} />
               <span className="pinfo">
@@ -110,6 +112,8 @@ export default function Register({ D, perm, latest, openPerson, saveMark, create
       </div>
       <datalist id="people-names">{D.people.map((p) => <option key={p.id} value={p.name} />)}</datalist>
 
+      {panel && <ProfileForm key={panel.id} person={panel} people={D.people} canEdit={perm.mark} setError={setError}
+        onOpenCard={() => { const id = panel.id; setPanel(null); openPerson(id); }} onClose={() => setPanel(null)} onSaved={() => { setPanel(null); reload(); }} />}
       {adding && <NewPersonSheet D={D} defaultSunday={latest} createRoll={createRoll} setError={setError} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
     </div>
   );

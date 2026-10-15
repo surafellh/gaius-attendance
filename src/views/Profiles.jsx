@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
 import { ONE, pct, personFacts } from '../lib/stats';
-import { Sheet, Initials, Icon, CAT_COLOR } from './common';
+import { Drawer, Initials, Icon, CAT_COLOR } from './common';
 
 export const PROFILE_FIELDS = [
   ['full_name', 'Full name'], ['gender', 'Gender'], ['phone', 'Phone'], ['church', 'Church'], ['education', 'Education'],
@@ -62,57 +62,80 @@ export default function Profiles({ D, idx, latest, perm, openPerson, reload, set
                   <span className={`tag ${n >= 9 ? 'ok' : n >= 4 ? 'sun' : 'bad'}`}>{n}/{PROFILE_FIELDS.length} filled</span>
                 </span>
               </button>
-              {perm.manage && <button className="icon-btn" onClick={() => setEdit(p)} aria-label={`Edit ${p.name}'s profile`}><Icon.edit /></button>}
+              {perm.mark && <button className="icon-btn" onClick={() => setEdit(p)} aria-label={`Edit ${p.name}'s profile`}><Icon.edit /></button>}
             </div>
           );
         })}
       </div>
       {list.length === 0 && <div className="card empty">Nobody here yet.</div>}
-      {edit && <ProfileForm person={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} setError={setError} />}
+      {edit && <ProfileForm person={edit} people={D.people} canEdit={perm.mark} onOpenCard={() => { const id = edit.id; setEdit(null); openPerson(id); }} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} setError={setError} />}
     </div>
   );
 }
 
-export function ProfileForm({ person, onClose, onSaved, setError }) {
-  const [f, setF] = useState(() => Object.fromEntries(PROFILE_FIELDS.map(([k]) => [k, person[k] ?? ''])));
+export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true, onOpenCard, people = [] }) {
+  const keys = ['name', ...PROFILE_FIELDS.map(([k]) => k), 'invited_by', 'notes'];
+  const [f, setF] = useState(() => Object.fromEntries(keys.map((k) => [k, person[k] ?? ''])));
+  const [potential, setPotential] = useState(!!person.potential_leader);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const age = f.birth_year ? new Date().getFullYear() - Number(f.birth_year) : null;
+  const n = PROFILE_FIELDS.filter(([k]) => String(f[k] ?? '').trim() !== '').length;
   async function save(e) {
-    e.preventDefault(); setBusy(true);
-    const patch = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : k === 'birth_year' ? Number(v) : v]));
+    e?.preventDefault(); setBusy(true);
+    const patch = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : k === 'birth_year' ? Number(v) : typeof v === 'string' ? v.trim() : v]));
+    if (!patch.name) patch.name = person.name;
+    const inviter = people.find((p) => p.name.toLowerCase() === (patch.invited_by || '').toLowerCase());
+    patch.invited_by_id = inviter?.id || null;
+    patch.potential_leader = potential;
+    patch.updated_at = new Date().toISOString();
     const { error } = await supabase.from('people').update(patch).eq('id', person.id);
     setBusy(false);
     if (error) return setError(`Not saved: ${error.message}`);
     onSaved();
   }
+  const dis = !canEdit;
   return (
-    <Sheet title={`Profile · ${person.name}`} onClose={onClose}>
-      <form className="form" onSubmit={save}>
+    <Drawer onClose={onClose}
+      title={<div className="row" style={{ gap: 10 }}><Initials name={person.name} category={person.category} /><div style={{ minWidth: 0 }}><h3>{person.full_name || person.name}</h3><div className="small muted">{ONE[person.category] || 'No group'} · #{person.sn} · {n}/{PROFILE_FIELDS.length} profile fields filled</div></div></div>}
+      footer={<>
+        {onOpenCard && <button type="button" className="btn ghost" onClick={onOpenCard}>Attendance card</button>}
+        {canEdit && <button type="submit" form="profile-form" className="btn lime" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>}
+      </>}>
+      <form id="profile-form" className="form" onSubmit={save}>
+        <div className="form-section">Who they are</div>
         <div className="row2">
-          <label>Full name<input value={f.full_name} onChange={set('full_name')} /></label>
-          <label>Gender<select value={f.gender} onChange={set('gender')}><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label>
-        </div>
-        <div className="row2">
-          <label>Phone<input inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
-          <label>Birth year {age ? <span className="faint">(about {age})</span> : null}<input inputMode="numeric" value={f.birth_year} onChange={set('birth_year')} placeholder="e.g. 2001" /></label>
-        </div>
-        <div className="row2">
-          <label>Church<input value={f.church} onChange={set('church')} /></label>
-          <label>Residential area<input value={f.area} onChange={set('area')} /></label>
+          <label>Name on the list<input disabled={dis} value={f.name} onChange={set('name')} /></label>
+          <label>Full name<input disabled={dis} value={f.full_name} onChange={set('full_name')} /></label>
         </div>
         <div className="row2">
-          <label>Education<input value={f.education} onChange={set('education')} /></label>
-          <label>Work<input value={f.work} onChange={set('work')} /></label>
+          <label>Gender<select disabled={dis} value={f.gender} onChange={set('gender')}><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label>
+          <label>Birth year {age ? <span className="faint">(about {age})</span> : null}<input disabled={dis} inputMode="numeric" value={f.birth_year} onChange={set('birth_year')} placeholder="e.g. 2001" /></label>
         </div>
-        <div className="row3">
-          <label>Passion / talent<input value={f.passion} onChange={set('passion')} /></label>
-          <label>Level<input value={f.level} onChange={set('level')} placeholder="1, 2, 3…" /></label>
-          <label>First teaching<input value={f.start_teaching} onChange={set('start_teaching')} placeholder="e.g. ተሃድሶ" /></label>
+        <div className="row2">
+          <label>Phone<input disabled={dis} inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
+          <label>Residential area<input disabled={dis} value={f.area} onChange={set('area')} /></label>
         </div>
-        <p className="muted tiny">Joined: {person.week_joined ? etLabel(person.week_joined, true) : 'before records'} (set from the person's first Sunday).</p>
-        <button className="btn lime wide" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>
+        <div className="form-section">Church, study and work</div>
+        <label>Church<input disabled={dis} value={f.church} onChange={set('church')} /></label>
+        <label>Education<input disabled={dis} value={f.education} onChange={set('education')} /></label>
+        <div className="row2">
+          <label>Work<input disabled={dis} value={f.work} onChange={set('work')} /></label>
+          <label>Passion / talent<input disabled={dis} value={f.passion} onChange={set('passion')} /></label>
+        </div>
+        <div className="form-section">In Gaius</div>
+        <div className="row2">
+          <label>Invited by<input disabled={dis} list="profile-people" value={f.invited_by} onChange={set('invited_by')} /></label>
+          <label>Joined<input disabled value={person.week_joined ? etLabel(person.week_joined, true) : 'Before records'} /></label>
+        </div>
+        <div className="row2">
+          <label>Level<input disabled={dis} value={f.level} onChange={set('level')} placeholder="1, 2, 3…" /></label>
+          <label>First teaching (roadmap)<input disabled={dis} value={f.start_teaching} onChange={set('start_teaching')} placeholder="e.g. ተሃድሶ, ወንጌል" /></label>
+        </div>
+        <label className="check"><input type="checkbox" disabled={dis} checked={potential} onChange={(e) => setPotential(e.target.checked)} /> Being considered as a potential leader</label>
+        <label>Notes<textarea disabled={dis} rows={4} value={f.notes} onChange={set('notes')} placeholder="Anything the leaders should know" /></label>
+        <datalist id="profile-people">{people.map((p) => <option key={p.id} value={p.name} />)}</datalist>
       </form>
-    </Sheet>
+    </Drawer>
   );
 }

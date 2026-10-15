@@ -99,7 +99,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
               <span key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v || <span className="faint">—</span>}</dd></span>
             ))}
           </dl>
-          {perm.manage && <button className="btn ghost small" style={{ marginTop: 10 }} onClick={() => setEditProfile(true)}><Icon.edit width="16" height="16" /> Edit profile</button>}
+          {perm.mark && <button className="btn ghost small" style={{ marginTop: 10 }} onClick={() => setEditProfile(true)}><Icon.edit width="16" height="16" /> Edit profile</button>}
         </>
       )}
 
@@ -119,7 +119,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
           {manage && <Manage p={p} idx={idx} latest={latest} leaders={leaders} current={current} reload={reload} setError={setError} onDone={() => setManage(false)} />}
         </>
       )}
-      {editProfile && <ProfileForm person={p} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); reload(); }} setError={setError} />}
+      {editProfile && <ProfileForm person={p} people={D.people} canEdit={perm.mark} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); reload(); }} setError={setError} />}
     </Sheet>
   );
 }
