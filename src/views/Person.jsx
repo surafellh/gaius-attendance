@@ -5,6 +5,7 @@ import { CATEGORIES, ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/
 import { Sheet, Initials, Icon, CAT_COLOR, telLink } from './common';
 import { ProfileForm } from './Profiles';
 import LeaderStage from './LeaderStage';
+import { ageOf } from '../lib/exports';
 
 export default function PersonSheet({ person: p, onClose, idx, latest, today, D, perm, saveMark, reload, setError, personBy }) {
   const [sem, setSem] = useState(semesterOf(latest));
@@ -95,7 +96,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
       {showProfile && (
         <>
           <dl className="kv">
-            {[['Full name', p.full_name], ['Gender', p.gender], ['Age', p.birth_year ? new Date().getFullYear() - p.birth_year : null], ['Church', p.church], ['Education', p.education],
+            {[['Full name', p.full_name], ['Gender', p.gender], ['Age', ageOf(p) === '' ? null : `${p.birth_date ? '' : '~'}${ageOf(p)}`], ['Church', p.church], ['Education', p.education],
               ['Work', p.work], ['Passion / talent', p.passion], ['Area', p.area], ['Level', p.level], ['First teaching', p.start_teaching], ['Notes', p.notes]].map(([k, v]) => (
               <span key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v || <span className="faint">—</span>}</dd></span>
             ))}

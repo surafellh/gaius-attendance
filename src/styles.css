@@ -525,3 +525,7 @@ legend { font-size: .85rem; font-weight: 800; padding: 0 6px; }
 .export-kind span { font-size: .78rem; color: var(--muted); }
 .export-kind.on { border-color: var(--lime-strong); background: var(--lime-tint); box-shadow: 0 0 0 3px rgba(141, 198, 63, .25); }
 .export-btn { flex: none; } @media (max-width: 600px) { .export-btn { flex: 1 1 100%; justify-content: center; } }
+.export-cats { border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px 10px; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 12px; }
+.export-cats legend { font-size: .78rem; font-weight: 800; color: var(--muted); padding: 0 4px; }
+.export-cats .check { font-size: .9rem; }
+.export-cats .check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }

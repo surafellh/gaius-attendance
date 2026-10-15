@@ -1,105 +1,169 @@
-// Reports for leaders and HQ: Excel (.xlsx) and PDF (printable page → "Save as PDF").
-import { etLabel, fmtGreg, sundaysOfMonth, monthLabel, sundaysOf, semesterStart } from './ethiopian';
-import { ONE, pct, weekSummary, stageOf, STAGE_LABEL } from './stats';
+// Reports for leaders and HQ: Excel (.xlsx) and PDF (print-ready page → "Save as PDF").
+// Reports show what leaders need – the data in the app is more complete than any report.
+import { etLabel, fmtGreg, sundaysOfMonth, monthLabel, sundaysOf, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, shortEt } from './ethiopian';
+import { pct, readiness } from './stats';
 
-const GROUP_ORDER = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'New Comer'];
+/* report groups, in order; "active" comes from that Sunday's snapshot */
+export const REPORT_CATS = [
+  ['Leader', 'Leaders', (r) => r.category === 'Leader'],
+  ['Member', 'Members', (r) => r.category === 'Member'],
+  ['Active Informal Member', 'Informal members', (r) => r.category === 'Active Informal Member'],
+  ['Active New Comer', 'Active new comers', (r) => r.category === 'New Comer' && r.active],
+];
+const catsOf = (keys) => REPORT_CATS.filter(([k]) => keys.includes(k));
+const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+const one = (v) => (v == null ? '' : Math.round(v * 10) / 10);
+const center = (ctx) => ctx.D.center?.name || '';
 
-function sundayRows(ctx, sundays) {
-  const { idx, progBy, D } = ctx;
-  return sundays.filter((s) => idx.heldSet.has(s) || progBy[s]).map((s) => {
-    const rows = idx.bySunday[s] || [];
-    const w = weekSummary(rows);
-    const p = progBy[s] || {};
-    const first = D.people.filter((x) => x.week_joined === s).length;
-    return [etLabel(s, true), fmtGreg(s) + ' ' + s.slice(0, 4), p.kind || '', p.topic || '', p.minister || '',
-      w.present, w.countedPresent, w.counted, rows.length ? pct(w.rate) : '',
-      w.byCat.Leader.present, w.byCat.Member.present, w.byCat['Active Informal Member'].present, w.byCat['New Comer'].present, first];
+/* one Sunday, counted only over the chosen groups */
+function sundayStats(ctx, s, cats) {
+  const rows = (ctx.idx.bySunday[s] || []).filter((r) => ctx.personBy[r.person_id]);
+  const by = cats.map(([, , test]) => {
+    const g = rows.filter(test);
+    return { total: g.length, present: g.filter((r) => r.status === 'Present').length };
   });
+  const total = by.reduce((n, x) => n + x.total, 0), present = by.reduce((n, x) => n + x.present, 0);
+  return { present, total, rate: total ? present / total : null, by };
 }
-const SUNDAY_HEAD = ['Sunday (E.C.)', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Came', 'Expected came', 'Expected', 'Rate',
-  'Leaders', 'Members', 'Active informal', 'New comers', 'First time'];
+const held = (ctx, sundays) => sundays.filter((s) => ctx.idx.heldSet.has(s));
 
-function peopleGrid(ctx, sundays) {
-  const { idx, personBy } = ctx;
-  const held = sundays.filter((s) => idx.heldSet.has(s));
-  const map = new Map();
-  for (const s of held) for (const r of idx.bySunday[s] || []) {
-    if (!personBy[r.person_id]) continue;
-    if (!map.has(r.person_id)) map.set(r.person_id, { p: personBy[r.person_id], cells: {} });
-    const x = map.get(r.person_id); x.cells[s] = r; x.last = r;
+function summaryTable(ctx, sundays, cats) {
+  const head = ['Sunday', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Rate', ...cats.map(([, l]) => l)];
+  const body = sundays.filter((s) => ctx.idx.heldSet.has(s) || ctx.progBy[s]).map((s) => {
+    const p = ctx.progBy[s] || {};
+    const st = sundayStats(ctx, s, cats);
+    const on = ctx.idx.heldSet.has(s);
+    return [etLabel(s), fmtGreg(s), p.kind || '', p.topic || '', p.minister || '', on ? st.present : '', on ? pct(st.rate) : '', ...st.by.map((x) => (on ? x.present : ''))];
+  });
+  return { name: 'Summary', head, body };
+}
+
+/* person × Sunday grid with a heading row per group */
+function gridTable(ctx, sundays, cats) {
+  const hs = held(ctx, sundays);
+  const last = hs[hs.length - 1];
+  const body = [];
+  for (const [k, label, test] of cats) {
+    const rows = (ctx.idx.bySunday[last] || []).filter((r) => ctx.personBy[r.person_id] && test(r)).map((r) => ctx.personBy[r.person_id])
+      .sort((a, b) => (k === 'Active New Comer' ? (a.week_joined || '').localeCompare(b.week_joined || '') : 0) || (a.sn ?? 1e9) - (b.sn ?? 1e9));
+    if (!rows.length) continue;
+    body.push({ group: `${label} (${rows.length})` });
+    rows.forEach((p, i) => {
+      const marks = hs.map((s) => { const st = ctx.idx.byPerson[p.id]?.[s]?.status; return st === 'Present' ? 'P' : st === 'Absent' ? 'A' : ''; });
+      const pres = marks.filter((m) => m === 'P').length, tot = marks.filter(Boolean).length;
+      body.push([i + 1, p.name, ...marks, pres, tot ? pct(pres / tot) : '']);
+    });
   }
-  const list = [...map.values()].sort((a, b) => GROUP_ORDER.indexOf(a.last.category) - GROUP_ORDER.indexOf(b.last.category)
-    || (a.last.category === 'New Comer' ? (a.p.week_joined || '').localeCompare(b.p.week_joined || '') : 0) || (a.p.sn ?? 1e9) - (b.p.sn ?? 1e9));
-  const n = {};
-  const body = list.map((x) => {
-    const c = x.last.category;
-    n[c] = (n[c] || 0) + 1;
-    const marks = held.map((s) => (x.cells[s]?.status === 'Present' ? 'P' : x.cells[s]?.status === 'Absent' ? 'A' : ''));
-    const pres = marks.filter((m) => m === 'P').length, tot = marks.filter(Boolean).length;
-    const grp = c === 'New Comer' ? `New comer (${x.last.active ? 'active' : 'inactive'})` : ONE[c];
-    return [n[c], x.p.name, grp, x.p.invited_by || '', ...marks, pres, tot ? pct(pres / tot) : ''];
-  });
-  return { head: ['S.N', 'Name', 'Group', 'Invited by', ...held.map((s) => etLabel(s)), 'Came', '%'], body, held };
+  return { name: 'Attendance', head: ['S.N', 'Name', ...hs.map((s) => shortEt(s)), 'Total', '%'], marks: [2, 2 + hs.length], body };
 }
 
-export function monthlyReport(ctx, month) {
+export function monthlyReport(ctx, month, keys) {
+  const cats = catsOf(keys);
   const sundays = sundaysOfMonth(month.year, month.month);
-  const g = peopleGrid(ctx, sundays);
-  const title = `Gaius ${ctx.D.center?.name || ''} – attendance ${monthLabel(month)}`;
+  const hs = held(ctx, sundays);
+  const st = hs.map((s) => sundayStats(ctx, s, cats));
   return {
-    title, file: `Gaius_${ctx.D.center?.name || 'center'}_${monthLabel(month).replace(' ', '_')}`, landscape: true,
-    sub: `${g.held.length} Sundays held · rate counts leaders, members, active informal members and active new comers`,
-    sheets: [
-      { name: 'Summary', head: SUNDAY_HEAD, body: sundayRows(ctx, sundays) },
-      { name: 'Attendance', head: g.head, body: g.body },
-    ],
+    title: `Gaius ${center(ctx)} – ${monthLabel(month)} attendance`,
+    file: `Gaius_${center(ctx)}_${monthLabel(month).replace(' ', '_')}`,
+    sub: `${hs.length} Sundays · average ${one(avg(st.map((x) => x.present)))} present · average rate ${pct(avg(st.map((x) => x.rate).filter((v) => v != null)))} · ${cats.map(([, l]) => l).join(', ')}`,
+    sheets: [summaryTable(ctx, sundays, cats), gridTable(ctx, sundays, cats)],
   };
 }
 
-export function semesterReport(ctx, sem) {
+export function semesterReport(ctx, sem, keys) {
+  const cats = catsOf(keys);
   const sundays = sundaysOf(sem).filter((s) => s <= ctx.today);
-  const g = peopleGrid(ctx, sundays);
-  const sum = sundayRows(ctx, sundays);
-  const people = g.body.map((r) => [r[0], r[1], r[2], r[3], r[r.length - 2], r.slice(4, -2).filter(Boolean).length, r[r.length - 1]]);
-  const { idx } = ctx;
-  const rates = g.held.map((s) => weekSummary(idx.bySunday[s]).rate).filter((v) => v != null);
+  const hs = held(ctx, sundays);
+  const st = Object.fromEntries(hs.map((s) => [s, sundayStats(ctx, s, cats)]));
+  const avgPresent = avg(hs.map((s) => st[s].present)), avgRate = avg(hs.map((s) => st[s].rate).filter((v) => v != null));
+  const best = [...hs].sort((a, b) => st[b].present - st[a].present)[0], low = [...hs].sort((a, b) => st[a].present - st[b].present)[0];
+  const from = semesterStart(sem), to = semesterEnd(sem);
+  const firstTime = ctx.D.people.filter((p) => p.week_joined && p.week_joined >= from && p.week_joined <= to).length;
+  const becameMembers = ctx.D.history.filter((h) => h.category === 'Member' && h.since >= from && h.since <= to && h.note !== 'from sheet').length;
+  const progs = hs.filter((s) => ctx.progBy[s]?.kind && ctx.progBy[s].kind !== 'No meeting').length;
+  const last = hs[hs.length - 1];
+
+  const overview = { name: 'Overview', head: ['', ''], body: [
+    ['Sundays held', hs.length],
+    ['Average total present', one(avgPresent)],
+    ['Average attendance rate', pct(avgRate)],
+    ['Highest Sunday', best ? `${etLabel(best)} – ${st[best].present} present` : ''],
+    ['Lowest Sunday', low ? `${etLabel(low)} – ${st[low].present} present` : ''],
+    ['First-time visitors', firstTime],
+    ['New comers who became members', becameMembers],
+    ['Sundays with a program recorded', `${progs} of ${hs.length}`],
+  ] };
+  const byCat = { name: 'By group', head: ['Group', 'People now', 'Average present', 'Average rate'], body: cats.map(([, l], i) => {
+    const pres = hs.map((s) => st[s].by[i].present);
+    const rate = hs.map((s) => (st[s].by[i].total ? st[s].by[i].present / st[s].by[i].total : null)).filter((v) => v != null);
+    return [l, last ? st[last].by[i].total : '', one(avg(pres)), pct(avg(rate))];
+  }) };
+  const months = [];
+  for (const s of hs) { const e = toEthiopian(s); let m = months[months.length - 1]; if (!m || m.month !== e.month) { m = { month: e.month, list: [] }; months.push(m); } m.list.push(s); }
+  const byMonth = { name: 'By month', head: ['Month', 'Sundays', 'Average present', 'Average rate', ...cats.map(([, l]) => l)], body: months.map((m) => [
+    ET_MONTHS[m.month], m.list.length, one(avg(m.list.map((s) => st[s].present))), pct(avg(m.list.map((s) => st[s].rate).filter((v) => v != null))),
+    ...cats.map((_, i) => one(avg(m.list.map((s) => st[s].by[i].present))))]) };
+  const programs = { name: 'Programs', head: ['Sunday', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Rate'],
+    body: sundays.filter((s) => ctx.idx.heldSet.has(s) || ctx.progBy[s]).map((s) => {
+      const p = ctx.progBy[s] || {};
+      return [etLabel(s), p.kind || '', p.topic || '', p.minister || '', st[s]?.present ?? '', st[s] ? pct(st[s].rate) : ''];
+    }) };
   return {
-    title: `Gaius ${ctx.D.center?.name || ''} – ${sem} semester report`, file: `Gaius_${ctx.D.center?.name || 'center'}_${sem.replace(' ', '_')}_report`,
-    sub: `From ${etLabel(semesterStart(sem), true)} · ${g.held.length} Sundays held · average rate ${pct(rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : null)}`,
-    landscape: true,
-    sheets: [
-      { name: 'Programs & attendance', head: SUNDAY_HEAD, body: sum },
-      { name: 'People', head: ['S.N', 'Name', 'Group', 'Invited by', 'Came', 'Of Sundays (since joining)', '%'], body: people },
-      { name: 'Weekly grid', head: g.head, body: g.body, wide: true },
-    ],
+    title: `Gaius ${center(ctx)} – ${sem} semester summary`, file: `Gaius_${center(ctx)}_${sem.replace(' ', '_')}_summary`,
+    sub: `${etLabel(from, true)} – ${etLabel(last || to, true)} · ${cats.map(([, l]) => l).join(', ')}`,
+    sheets: [overview, byCat, byMonth, programs],
   };
 }
 
-export function profilesReport(ctx) {
-  const { D, personBy } = ctx;
-  const resp = (p) => D.assignments.find((a) => a.person_id === p.id && !a.until)?.leader_name || p.responsible || '';
-  const list = D.people.filter((p) => !p.archived && p.category !== 'New Comer')
-    .sort((a, b) => GROUP_ORDER.indexOf(a.category) - GROUP_ORDER.indexOf(b.category) || (a.sn ?? 1e9) - (b.sn ?? 1e9));
-  const year = new Date().getFullYear();
-  const body = list.map((p, i) => [i + 1, p.full_name || p.name, p.name, ONE[p.category] || '', STAGE_LABEL[stageOf(p)] || '', p.gender || '', p.phone || '',
-    p.church || '', p.education || '', p.work || '', p.passion || '', p.area || '', p.birth_year ? year - p.birth_year : '', p.level || '',
-    p.week_joined ? etLabel(p.week_joined, true) : '', (p.invited_by_id && personBy[p.invited_by_id]?.name) || p.invited_by || '', p.start_teaching || '', resp(p), p.notes || '']);
+/* age: exact from date of birth; otherwise estimated from birth year (mid-year), so it moves on by itself */
+export function ageOf(p, today = new Date()) {
+  if (p.birth_date) {
+    const b = new Date(p.birth_date + 'T00:00:00');
+    let a = today.getFullYear() - b.getFullYear();
+    if (today.getMonth() < b.getMonth() || (today.getMonth() === b.getMonth() && today.getDate() < b.getDate())) a--;
+    return a;
+  }
+  if (!p.birth_year) return '';
+  return Math.floor((today - new Date(p.birth_year, 6, 1)) / (365.25 * 864e5));
+}
+
+export const PROFILE_TABLES = [
+  ['Leader', 'Leaders'], ['Senior Leader', 'Senior leaders'], ['Member', 'Members'], ['Active Informal Member', 'Informal members'], ['Active New Comer', 'Active new comers (top 6)'],
+];
+export function profilesReport(ctx, keys) {
+  const { D, idx, latest } = ctx;
+  const head = ['No', 'Full name', 'Gender', 'Phone', 'Church', 'Education', 'Work', 'Passion / talent', 'Area', 'Age', 'Level', 'Joined', 'First teaching'];
+  const row = (p, i) => [i + 1, p.full_name || p.name, p.gender || '', p.phone || '', p.church || '', p.education || '', p.work || '', p.passion || '', p.area || '',
+    ageOf(p), p.level || '', p.week_joined ? etLabel(p.week_joined, true) : '', p.start_teaching || ''];
+  const live = D.people.filter((p) => !p.archived);
+  const sheets = PROFILE_TABLES.filter(([k]) => keys.includes(k)).map(([k, label]) => {
+    let list;
+    if (k === 'Active New Comer') {
+      list = (idx.bySunday[latest] || []).filter((r) => r.category === 'New Comer' && r.active).map((r) => live.find((p) => p.id === r.person_id)).filter(Boolean)
+        .map((p) => ({ p, s: readiness(p, idx.byPerson[p.id], idx.held, latest).score ?? 0 })).sort((a, b) => b.s - a.s).slice(0, 6).map((x) => x.p);
+    } else list = live.filter((p) => p.category === k).sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9));
+    return { name: label, head, body: list.map(row) };
+  });
   return {
-    title: `Gaius ${D.center?.name || ''} – member profiles`, file: `Gaius_${D.center?.name || 'center'}_profiles`, landscape: true,
-    sub: `${list.length} leaders, members and informal members · HQ profile format`,
-    sheets: [{ name: 'Profiles', head: ['No', 'Full name', 'Name on list', 'Group', 'Leadership', 'Gender', 'Phone', 'Church', 'Education', 'Work', 'Passion / talent',
-      'Area', 'Age', 'Level', 'Joined', 'Invited by', 'First teaching', 'Responsible', 'Notes'], body }],
+    title: `Gaius ${center(ctx)} – member profiles`, file: `Gaius_${center(ctx)}_profiles`,
+    sub: `As of ${etLabel(ctx.today, true)} · active new comers ranked by attendance over the last 6 months`, sheets,
   };
 }
 
+/* ── writers ───────────────────────────────────────────────────── */
 export async function toExcel(rep) {
   const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
   for (const sh of rep.sheets) {
-    const ws = XLSX.utils.aoa_to_sheet([[rep.title], [rep.sub], [], sh.head, ...sh.body]);
-    ws['!cols'] = sh.head.map((h, i) => ({ wch: Math.min(40, Math.max(String(h).length, ...sh.body.map((r) => String(r[i] ?? '').length)) + 2) }));
-    ws['!freeze'] = { xSplit: 0, ySplit: 4 };
-    XLSX.utils.book_append_sheet(wb, ws, sh.name.slice(0, 31));
+    const body = sh.body.map((r) => (Array.isArray(r) ? r : [r.group]));
+    const aoa = [[rep.title], [rep.sub], [], ...(sh.head.some(Boolean) ? [sh.head] : []), ...body];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = sh.head.map((h, i) => {
+      if (sh.marks && i >= sh.marks[0] && i < sh.marks[1]) return { wch: 8 };
+      const w = Math.max(String(h).length, ...body.filter((r) => r.length > 1).map((r) => String(r[i] ?? '').length));
+      return { wch: Math.min(38, w + 2) };
+    });
+    XLSX.utils.book_append_sheet(wb, ws, sh.name.replace(/[\\/?*[\]:]/g, '').slice(0, 31));
   }
   XLSX.writeFile(wb, `${rep.file}.xlsx`);
 }
@@ -109,19 +173,32 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 export function toPdf(rep) {
   const w = window.open('', '_blank');
   if (!w) { alert('Allow pop-ups for this site to save the PDF.'); return; }
-  const cell = (v) => (v === 'P' ? '<td class="P">✓</td>' : v === 'A' ? '<td class="A">✕</td>' : `<td>${esc(v)}</td>`);
-  const tables = rep.sheets.map((sh) => `<h2>${esc(sh.name)}</h2><table class="${sh.head.length > 12 ? 'dense' : ''}"><thead><tr>${sh.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${sh.body.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>`).join('');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(rep.file)}</title>
+  const wide = rep.sheets.some((sh) => sh.head.length > 9);
+  const table = (sh) => {
+    const isMark = (i) => sh.marks && i >= sh.marks[0] && i < sh.marks[1];
+    const hasHead = sh.head.some(Boolean);
+    const th = hasHead ? `<thead><tr>${sh.head.map((h, i) => (isMark(i) ? `<th class="mk">${esc(h).replace(' ', '<br>')}</th>` : `<th>${esc(h)}</th>`)).join('')}</tr></thead>` : '';
+    const tr = sh.body.map((r) => (Array.isArray(r)
+      ? `<tr>${r.map((v, i) => (isMark(i) ? `<td class="mk ${v}">${v === 'P' ? '✓' : v === 'A' ? '✕' : ''}</td>` : `<td>${esc(v)}</td>`)).join('')}</tr>`
+      : `<tr class="grp"><td colspan="${sh.head.length}">${esc(r.group)}</td></tr>`)).join('');
+    return `<h2>${esc(sh.name)}</h2><table class="${sh.marks ? 'grid' : ''} ${hasHead ? '' : 'kv'}">${th}<tbody>${tr || `<tr><td>Nobody in this group.</td></tr>`}</tbody></table>`;
+  };
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(rep.file)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;700&family=Manrope:wght@400;700;800&display=swap" rel="stylesheet">
-<style>@page{size:A4 ${rep.landscape ? 'landscape' : 'portrait'};margin:12mm}*{box-sizing:border-box}body{font-family:Manrope,'Noto Sans Ethiopic',system-ui,sans-serif;color:#172114;margin:0;padding:16px}
-.band{height:6px;background:repeating-linear-gradient(90deg,#1a2e14 0 14px,#f6c343 14px 18px,#1a2e14 18px 22px,#fff 22px 26px,#1a2e14 26px 40px,#7ab52c 40px 46px);margin-bottom:12px}
+<style>@page{size:A4 ${wide ? 'landscape' : 'portrait'};margin:12mm}*{box-sizing:border-box}body{font-family:Manrope,'Noto Sans Ethiopic',system-ui,sans-serif;color:#172114;margin:0;padding:16px}
+.band{height:6px;background:repeating-linear-gradient(90deg,#1a2e14 0 14px,#f6c343 14px 18px,#1a2e14 18px 22px,#fff 22px 26px,#1a2e14 26px 40px,#7ab52c 40px 46px);margin-bottom:10px}
 header{background:#8dc63f;padding:12px 14px;border-radius:8px 8px 0 0}h1{font-size:18px;margin:0}.sub{font-size:11px;color:#26431d;margin-top:2px}
-h2{font-size:13px;margin:16px 0 6px;color:#4f8a12;break-after:avoid}table{border-collapse:collapse;width:100%;font-size:9.5px}th,td{border:1px solid #dfe6d5;padding:3px 5px;text-align:left;vertical-align:top}
-th{background:#eef7e0;font-weight:700}tbody tr:nth-child(even) td{background:#f8fbf4}table.dense{font-size:8px}td.P{color:#fff;background:#23964f!important;text-align:center}td.A{color:#d9533c;background:#fce9e4!important;text-align:center}
+h2{font-size:13px;margin:16px 0 6px;color:#4f8a12;break-after:avoid}table{border-collapse:collapse;font-size:10px;margin-bottom:4px}th,td{border:1px solid #dfe6d5;padding:3px 6px;text-align:left;vertical-align:top}
+th{background:#eef7e0;font-weight:700}tbody tr:nth-child(even) td{background:#f8fbf4}
+table.kv td:first-child{font-weight:700;background:#f6fbef;min-width:200px}table.kv td{font-size:11px;padding:5px 8px}
+table.grid{font-size:9.5px}table.grid td:nth-child(2){white-space:nowrap;min-width:110px}
+th.mk{width:30px;min-width:30px;max-width:30px;padding:2px 1px;text-align:center;font-size:8px;line-height:1.1}
+td.mk{width:30px;max-width:30px;padding:2px 0;text-align:center;font-weight:700}td.mk.P{color:#fff;background:#23964f!important}td.mk.A{color:#d9533c;background:#fce9e4!important}
+tr.grp td{background:#1a2e14!important;color:#fff;font-weight:800;font-size:10px;padding:4px 8px}
 tr{break-inside:avoid}thead{display:table-header-group}.foot{font-size:9px;color:#5d6a57;margin-top:10px}.bar{position:sticky;top:0;background:#fff;padding:8px 0;display:flex;gap:8px}
 .bar button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;background:#8dc63f;cursor:pointer}@media print{.bar{display:none}body{padding:0}}</style></head>
 <body><div class="bar"><button onclick="print()">Save as PDF / Print</button><button onclick="close()" style="background:#eef2e8">Close</button></div>
-<header><h1>${esc(rep.title)}</h1><div class="sub">${esc(rep.sub)}</div></header><div class="band"></div>${tables}
+<header><h1>${esc(rep.title)}</h1><div class="sub">${esc(rep.sub)}</div></header><div class="band"></div>${rep.sheets.map(table).join('')}
 <p class="foot">Generated ${new Date().toLocaleString('en-GB')} · Gaius attendance app</p>
 <script>document.fonts.ready.then(()=>setTimeout(()=>print(),300))</script></body></html>`);
   w.document.close();

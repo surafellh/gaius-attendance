@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
 import { ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/stats';
 import { Drawer, Initials, Icon, CAT_COLOR } from './common';
+import { ageOf } from '../lib/exports';
 
 export const PROFILE_FIELDS = [
   ['full_name', 'Full name'], ['gender', 'Gender'], ['phone', 'Phone'], ['church', 'Church'], ['education', 'Education'],
@@ -79,12 +80,14 @@ export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true
   const [f, setF] = useState(() => Object.fromEntries(keys.map((k) => [k, person[k] ?? ''])));
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const age = f.birth_year ? new Date().getFullYear() - Number(f.birth_year) : null;
+  const [dob, setDob] = useState(person.birth_date || '');
+  const age = ageOf({ birth_date: dob || null, birth_year: Number(f.birth_year) || null });
   const n = PROFILE_FIELDS.filter(([k]) => String(f[k] ?? '').trim() !== '').length;
   async function save(e) {
     e?.preventDefault(); setBusy(true);
     const patch = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : k === 'birth_year' ? Number(v) : typeof v === 'string' ? v.trim() : v]));
     if (!patch.name) patch.name = person.name;
+    if ((dob || null) !== (person.birth_date || null)) { patch.birth_date = dob || null; if (dob) patch.birth_year = Number(dob.slice(0, 4)); }
     const inviter = people.find((p) => p.name.toLowerCase() === (patch.invited_by || '').toLowerCase());
     patch.invited_by_id = inviter?.id || null;
     patch.updated_at = new Date().toISOString();
@@ -109,7 +112,11 @@ export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true
         </div>
         <div className="row2">
           <label>Gender<select disabled={dis} value={f.gender} onChange={set('gender')}><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label>
-          <label>Birth year {age ? <span className="faint">(about {age})</span> : null}<input disabled={dis} inputMode="numeric" value={f.birth_year} onChange={set('birth_year')} placeholder="e.g. 2001" /></label>
+          <label>Date of birth {age !== '' ? <span className="faint">({dob ? '' : 'about '}{age})</span> : null}<input type="date" disabled={dis} value={dob} onChange={(e) => setDob(e.target.value)} /></label>
+        </div>
+        <div className="row2">
+          <label>Birth year <span className="faint">if the date is unknown</span><input disabled={dis || !!dob} inputMode="numeric" value={dob ? dob.slice(0, 4) : f.birth_year} onChange={set('birth_year')} placeholder="e.g. 2001" /></label>
+          <span />
         </div>
         <div className="row2">
           <label>Phone<input disabled={dis} inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
