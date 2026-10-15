@@ -44,3 +44,22 @@ export function parseReport(text, year) {
   }
   return { rows, skipped };
 }
+
+/* Events list, one per line:  "ጥቅምት 15 - የመሪዎች ስልጠና - ቦታ"  or a range "ጥቅምት 15-17 - Retreat - Bishoftu".
+   A year written on the line (e.g. "ጥቅምት 15 2019") wins over the default year. */
+export function parseEvents(text, year) {
+  const rows = [], skipped = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim().replace(/^[-•*\d.)\s]+(?=[^\d\s])/, '');
+    if (!line) continue;
+    const m = line.match(/^([^\s\d-]+)\s*(\d{1,2})(?:\s*(?:-|–|እስከ)\s*(\d{1,2}))?(?:[\s,]+(20\d\d))?\s*[-–:]?\s*(.*)$/);
+    const mi = m ? monthIndex(m[1]) : -1;
+    if (!m || mi < 0 || !m[5]) { skipped.push(line); continue; }
+    const y = Number(m[4] || year);
+    const d1 = Number(m[2]), d2 = m[3] ? Number(m[3]) : null;
+    const at = (d) => new Date(etNewYear(y) + (mi * 30 + d - 1) * DAY).toISOString().slice(0, 10);
+    const [title, location, ...rest] = m[5].split(/\s+[-–]\s+/).map((s) => s.trim());
+    rows.push({ starts_on: at(d1), ends_on: d2 && d2 > d1 ? at(d2) : null, title, location: location || null, notes: rest.join(' – ') || null, label: `${m[1]} ${d1}${d2 ? '–' + d2 : ''}` });
+  }
+  return { rows, skipped };
+}

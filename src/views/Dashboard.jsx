@@ -3,6 +3,7 @@ import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterStart, 
 import { SHORT, pct, personFacts, counts, readiness } from '../lib/stats';
 import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon } from './common';
 import { StackedBars, RateLines } from './Charts';
+import { meetingInfo, whenText } from './Meeting';
 
 const BAR_KEYS = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'Active New Comer', 'Inactive New Comer'];
 const BAR_LABELS = { ...SHORT, 'Active New Comer': 'New comers (active)', 'Inactive New Comer': 'New comers (inactive)' };
@@ -12,7 +13,7 @@ const GROUP_ROWS = [
 ];
 const monthKey = (s) => { const e = toEthiopian(s); return `${e.year}-${String(e.month).padStart(2, '0')}`; };
 
-export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go }) {
+export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today }) {
   const [range, setRange] = useState('semester');
   const [hidden, setHidden] = useState(() => new Set());
   const [rankGroup, setRankGroup] = useState('Member');
@@ -155,6 +156,8 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </select>
         </label>
       </div>
+
+      <Reminders D={D} today={today} go={go} />
 
       <section className="kpis" aria-label={`Summary for ${etLabel(sel, true)}`}>
         <div className="kpi hero">
@@ -385,3 +388,25 @@ function Kpi({ label, val, foot, color }) {
 const lr = (s) => { const t = s.byCat['Leader'].total; return t ? s.byCat['Leader'].present / t : null; };
 const noteOf = (p) => (p?.kind ? `${p.kind}${p.topic ? ': ' + p.topic : ''}${p.minister ? ' – ' + p.minister : ''}` : null);
 
+
+function Reminders({ D, today, go }) {
+  if (!D.p2) return null;
+  const m = meetingInfo(D.center, today);
+  const openItems = D.agenda.filter((a) => a.status === 'open' && (a.center_id || 1) === (D.center?.id || 1)).length;
+  const next = D.events.filter((e) => (e.ends_on || e.starts_on) >= today && (e.center_id == null || e.center_id === D.center?.id))
+    .sort((a, b) => a.starts_on.localeCompare(b.starts_on))[0];
+  return (
+    <div className="dash-reminders">
+      <button onClick={() => go('meeting')}>
+        <span className="ic"><Icon.list /></span>
+        <span className="pinfo"><span className="pname">Leaders’ meeting {whenText(m.inDays)} · {m.time}</span><span className="pmeta">{etLabel(m.next, true)} · {openItems} open agenda item{openItems === 1 ? '' : 's'}</span></span>
+      </button>
+      {next && (
+        <button onClick={() => go('calendar')}>
+          <span className="ic"><Icon.cal /></span>
+          <span className="pinfo"><span className="pname am">{next.title}</span><span className="pmeta">{etLabel(next.starts_on, true)} · {whenText(Math.max(0, Math.round((Date.parse(next.starts_on) - Date.parse(today)) / 864e5)))}{next.location ? ` · ${next.location}` : ''}</span></span>
+        </button>
+      )}
+    </div>
+  );
+}

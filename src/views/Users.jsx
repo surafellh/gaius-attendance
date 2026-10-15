@@ -36,7 +36,7 @@ export default function Users({ D, perm, profile, reload }) {
       {pending.length > 0 && <div className="banner">{pending.length} account{pending.length > 1 ? 's' : ''} waiting for approval.</div>}
 
       <section className="card">
-        <div className="card-head"><div><div className="card-title">{D.center?.name} center</div><div className="card-sub">The leaders' meeting day is used for reminders (coming in the next phase).</div></div></div>
+        <div className="card-head"><div><div className="card-title">{D.center?.name} center</div><div className="card-sub">The leaders' meeting day drives the Meeting page, dashboard reminder and the weekly phone reminder.</div></div></div>
         <div className="form">
           <div className="row2">
             <label>Leaders' meeting day<select disabled={!perm.manage} value={c.meeting_weekday} onChange={(e) => setC({ ...c, meeting_weekday: e.target.value })}>{DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}</select></label>

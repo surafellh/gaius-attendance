@@ -117,3 +117,19 @@ export function semesterEnd(sem) {
   return iso((half === 'Megabit' ? etNewYear(Number(y) + 1) : etNewYear(Number(y)) + 180 * DAY) - DAY);
 }
 export const todayIso = () => { const t = new Date(); return iso(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); };
+
+// first and last day (ISO) of an Ethiopian month
+export function monthRange({ year, month }) {
+  const start = etNewYear(year) + month * 30 * DAY;
+  const end = month === 12 ? etNewYear(year + 1) - DAY : start + 29 * DAY;
+  return [iso(start), iso(end)];
+}
+export const addDays = (d, n) => iso(Date.parse(d + 'T00:00:00Z') + n * DAY);
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const WEEKDAYS_AM = ['እሑድ', 'ሰኞ', 'ማክሰኞ', 'ረቡዕ', 'ሐሙስ', 'ዓርብ', 'ቅዳሜ'];
+export const weekdayOf = (d) => new Date(d + 'T00:00:00Z').getUTCDay();
+// next date (today included) that falls on weekday wd
+export function nextWeekday(wd, from = todayIso()) {
+  return addDays(from, (wd - weekdayOf(from) + 7) % 7);
+}
+export const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);

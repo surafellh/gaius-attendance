@@ -11,6 +11,9 @@ import Profiles from './views/Profiles';
 import Departments from './views/Departments';
 import Users from './views/Users';
 import Auth from './views/Auth';
+import Meeting from './views/Meeting';
+import CalendarPage from './views/CalendarPage';
+import Leadership from './views/Leadership';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 
@@ -60,8 +63,12 @@ const TABS = [
   ['register', 'People', Icon.people],
   ['profiles', 'Profiles', Icon.card, 'wide-only'],
   ['departments', 'Departments', Icon.layers, 'wide-only'],
+  ['meeting', 'Meeting', Icon.list, 'wide-only'],
+  ['calendar', 'Calendar', Icon.cal, 'wide-only'],
+  ['leadership', 'Leadership', Icon.star, 'wide-only'],
   ['users', 'Users', Icon.shield, 'wide-only'],
 ];
+const MORE = ['profiles', 'departments', 'meeting', 'calendar', 'leadership', 'users'];
 
 function Main({ profile }) {
   const perm = can(profile);
@@ -70,7 +77,7 @@ function Main({ profile }) {
   const [menu, setMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [D, setD] = useState({ people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null });
+  const [D, setD] = useState({ people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true });
   const [personId, setPersonId] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
 
@@ -83,9 +90,16 @@ function Main({ profile }) {
         q('department_members'), q('assignments'), q('category_history'), q('centers'),
       ]);
       const center = centers.find((c) => c.id === (profile.center_id || 1)) || centers[0];
+      // Phase 2 tables: the app still works if their SQL has not been run yet
+      let p2 = { criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true };
+      try {
+        const [criteria, evals, events, meetings, agenda, plan] = await Promise.all([
+          q('eval_criteria'), q('evaluations'), q('events'), q('meetings'), q('agenda_items'), q('teaching_plan')]);
+        p2 = { criteria: criteria.sort((a, b) => a.sort - b.sort || a.id - b.id), evals, events, meetings, agenda, plan, p2: true };
+      } catch { p2.p2 = false; }
       setD({
         people: people.filter((p) => (p.center_id || 1) === center?.id).sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
-        att, programs, departments: departments.sort((a, b) => a.sort - b.sort), members, assignments, history, center,
+        att, programs, departments: departments.sort((a, b) => a.sort - b.sort), members, assignments, history, center, ...p2,
       });
     } catch (e) {
       setError(`Couldn't load data: ${e.message}. If this is the first time after the update, run the v2 SQL in Supabase.`);
@@ -201,7 +215,7 @@ function Main({ profile }) {
             <Ico />{l}{k === 'follow' && alerts ? <span className="badge">{alerts}</span> : null}
           </button>
         ))}
-        <button className={`more-btn ${['profiles', 'departments', 'users'].includes(tab) ? 'on' : ''}`} onClick={() => setMore(true)}><Icon.more />More</button>
+        <button className={`more-btn ${MORE.includes(tab) ? 'on' : ''}`} onClick={() => setMore(true)}><Icon.more />More</button>
       </nav>
       <main>
         {error && <div className="banner err" style={{ marginBottom: 12 }}>{error}</div>}
@@ -214,6 +228,10 @@ function Main({ profile }) {
             {tab === 'profiles' && <Profiles {...ctx} />}
             {tab === 'departments' && <Departments {...ctx} />}
             {tab === 'users' && <Users {...ctx} />}
+            {tab === 'meeting' && <Meeting {...ctx} />}
+            {tab === 'calendar' && <CalendarPage {...ctx} />}
+            {tab === 'leadership' && <Leadership {...ctx} />}
+            {['meeting', 'calendar', 'leadership'].includes(tab) && !D.p2 && <div className="banner err">This part needs the Phase 2 SQL (v3_schema.sql) to be run in Supabase once.</div>}
           </>
         )}
       </main>
@@ -224,6 +242,9 @@ function Main({ profile }) {
           <div className="page" style={{ gap: 8 }}>
             {[['profiles', 'Profiles', Icon.card, 'Members, leaders, potential leaders – HQ profile format'],
               ['departments', 'Departments', Icon.layers, 'Who leads and serves in each department'],
+              ['meeting', 'Leaders’ meeting', Icon.list, 'Agenda, open items and reminders'],
+              ['calendar', 'Calendar', Icon.cal, 'Events and the HQ teaching plan'],
+              ['leadership', 'Leadership', Icon.star, 'Potential leaders and their evaluations'],
               ...(perm.users ? [['users', 'Users & settings', Icon.shield, 'Access levels, leaders’ meeting day']] : [])].map(([k, l, Ico, sub]) => (
               <button key={k} className="pcard" onClick={() => { setTab(k); setMore(false); window.scrollTo(0, 0); }}>
                 <span className="icon-btn"><Ico /></span>
