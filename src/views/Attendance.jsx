@@ -3,6 +3,7 @@ import { etLabel, fmtGreg, sundaysOfMonth, monthOf, addMonths, monthLabel, ET_MO
 import { SHORT, pct, weekSummary, counts } from '../lib/stats';
 import { Icon, Sheet, CAT_COLOR, CalendarSheet } from './common';
 import { NewPersonSheet } from './Register';
+import { parseReport } from '../lib/report';
 
 const GROUPS = [
   ['Leader', 'Leaders'], ['Senior Leader', 'Senior leaders'], ['Member', 'Members'], ['Active Informal Member', 'Active informal members'],
@@ -17,6 +18,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
   const [progFor, setProgFor] = useState(null);
   const [cal, setCal] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [report, setReport] = useState(false);
 
   const sundays = sundaysOfMonth(month.year, month.month);
   const rosters = useMemo(() => Object.fromEntries(sundays.map((s) => [s, rosterFor(s)])), [sundays.join(), rosterFor]); // eslint-disable-line
@@ -60,6 +62,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
           <Icon.search /><span className="sr-only">Search</span>
           <input placeholder="Find a person…" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
+        {perm.mark && <button className="btn ghost" onClick={() => setReport(true)}><Icon.book /> Paste report</button>}
       </div>
 
       <div className="grid-wrap">
@@ -151,6 +154,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
       {cal && <CalendarSheet value={sundays[0]} info={calInfo} allowFuture title="Jump to a month" onClose={() => setCal(false)} onPick={(s) => setMonth(monthOf(s))} />}
       {progFor && <ProgramSheet sunday={progFor} program={progBy[progFor]} departments={D.departments} canEdit={perm.mark} stats={colStats[progFor]}
         onClose={() => setProgFor(null)} onSave={(f) => { saveProgram(progFor, f); setProgFor(null); }} />}
+      {report && <ReportSheet year={month.year} progBy={progBy} saveProgram={saveProgram} onClose={() => setReport(false)} />}
       {adding && <NewPersonSheet D={D} defaultSunday={sundays.filter((s) => s <= today).pop() || latest} createRoll={createRoll}
         onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} setError={setError} />}
     </div>
@@ -196,3 +200,44 @@ export function ProgramSheet({ sunday, program, departments, canEdit, stats, onC
   );
 }
 
+
+function ReportSheet({ year, progBy, saveProgram, onClose }) {
+  const [y, setY] = useState(year);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(0);
+  const { rows, skipped } = parseReport(text, Number(y));
+  async function save() {
+    setBusy(true);
+    for (const r of rows) {
+      const { sunday, isSunday, label, ...f } = r; // eslint-disable-line no-unused-vars
+      await saveProgram(sunday, f);
+    }
+    setBusy(false); setDone(rows.length);
+  }
+  return (
+    <Sheet title="Paste a program report" onClose={onClose} wide>
+      <div className="form">
+        <p className="small muted">One line per Sunday: <b>month day - teacher/minister - program - topic</b>, in Amharic or English. Headings and blank lines are skipped. Existing records for those Sundays are replaced.</p>
+        <label>Ethiopian year<input inputMode="numeric" value={y} onChange={(e) => setY(e.target.value)} style={{ maxWidth: 120 }} /></label>
+        <label>Report<textarea rows={7} value={text} onChange={(e) => { setText(e.target.value); setDone(0); }} placeholder={'መስከረም 10 - ፓ/ር ፍፄ - ትምህርት - ትንቢተ ሚልክያስ'} /></label>
+        {rows.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="gtable left">
+              <thead><tr><th>Sunday</th><th>Program</th><th>Topic</th><th>Teacher / minister</th></tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.sunday}>
+                  <td>{etLabel(r.sunday, true)} <span className="muted tiny">{fmtGreg(r.sunday)}</span>{!r.isSunday && <span className="tag bad">not a Sunday</span>}{progBy[r.sunday] && <span className="tag sun">replaces</span>}</td>
+                  <td>{r.kind}</td><td className="am">{r.topic || '–'}</td><td className="am">{r.minister || '–'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        {skipped.length > 0 && text && <p className="tiny muted">Skipped: {skipped.join(' · ')}</p>}
+        {done > 0 ? <div className="banner ok">Saved {done} Sunday{done > 1 ? 's' : ''}.</div>
+          : <button className="btn lime" disabled={!rows.length || busy} onClick={save}>{busy ? 'Saving…' : `Save ${rows.length || ''} program${rows.length === 1 ? '' : 's'}`}</button>}
+      </div>
+    </Sheet>
+  );
+}
