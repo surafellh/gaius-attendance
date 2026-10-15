@@ -90,3 +90,30 @@ export function groupByMonth(sundays) {
 }
 
 export const shortEt = (d) => { const e = toEthiopian(d); return `${ET_MONTHS[e.month].slice(0, 3)} ${e.day}`; };
+
+// Sundays inside one Ethiopian month
+export function sundaysOfMonth(year, month) {
+  const start = etNewYear(year) + month * 30 * DAY;
+  const len = month === 12 ? (etNewYear(year + 1) - start) / DAY : 30;
+  const first = start + ((7 - new Date(start).getUTCDay()) % 7) * DAY;
+  const out = [];
+  for (let t = first; t < start + len * DAY; t += 7 * DAY) out.push(iso(t));
+  return out;
+}
+export function monthOf(d) { const e = toEthiopian(d); return { year: e.year, month: e.month }; }
+export function addMonths({ year, month }, n) {
+  let m = month + n, y = year;
+  while (m > 12) { m -= 13; y++; }
+  while (m < 0) { m += 13; y--; }
+  return { year: y, month: m };
+}
+export const monthLabel = ({ year, month }) => `${ET_MONTHS[month]} ${year}`;
+export function semesterStart(sem) {
+  const [half, y] = sem.split(' ');
+  return iso(etNewYear(Number(y)) + (half === 'Megabit' ? 180 : 0) * DAY);
+}
+export function semesterEnd(sem) {
+  const [half, y] = sem.split(' ');
+  return iso((half === 'Megabit' ? etNewYear(Number(y) + 1) : etNewYear(Number(y)) + 180 * DAY) - DAY);
+}
+export const todayIso = () => { const t = new Date(); return iso(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); };

@@ -1,85 +1,105 @@
-// Attendance calculations – mirror the Google Sheet's Calc / Follow-up logic
-export const CATEGORIES = ['Leader','Senior Leader','Member','Active Informal Member','Inactive Informal Member','New Comer'];
-export const FOLLOW_GROUPS = ['Leader','Senior Leader','Member','Active Informal Member','Active New Comer'];
+// Attendance rules for Gaius Gerji
+// • Every Sunday stores a snapshot of each person's group and (for new comers) active flag,
+//   so old percentages never change when someone's status changes later.
+// • Overall % counts Leaders, Senior Leaders, Members, Active Informal Members and ACTIVE new comers.
+// • New comers: active from their first visit; 4 absences in a row → inactive; 3 Sundays in a row → active again.
+// • Promising new comer: ≥50% of Sundays since joining AND at least one 4-in-a-row streak.
+
+export const CATEGORIES = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'New Comer'];
+export const CORE = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member'];
+export const FOLLOW_GROUPS = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Active New Comer'];
 export const SHORT = {
-  'Leader': 'Leaders', 'Senior Leader': 'Senior Leaders', 'Member': 'Members',
-  'Active Informal Member': 'Active Informal', 'Inactive Informal Member': 'Inactive Informal',
-  'New Comer': 'New Comers', 'Active New Comer': 'Active New Comers',
+  'Leader': 'Leaders', 'Senior Leader': 'Senior leaders', 'Member': 'Members',
+  'Active Informal Member': 'Active informal', 'Inactive Informal Member': 'Inactive informal',
+  'New Comer': 'New comers', 'Active New Comer': 'Active new comers', 'Inactive New Comer': 'Inactive new comers',
+};
+export const ONE = {
+  'Leader': 'Leader', 'Senior Leader': 'Senior leader', 'Member': 'Member', 'Active Informal Member': 'Active informal',
+  'Inactive Informal Member': 'Inactive informal', 'New Comer': 'New comer',
+};
+export const AM = {
+  'Leader': 'መሪዎች', 'Senior Leader': 'ከፍተኛ መሪዎች', 'Member': 'አባላት', 'Active Informal Member': 'ንቁ መደበኛ ያልሆኑ',
+  'Inactive Informal Member': 'ንቁ ያልሆኑ', 'New Comer': 'አዲስ መጪዎች', 'Active New Comer': 'ንቁ አዲስ መጪዎች',
 };
 
-// category of a person for a semester: that semester's status, else the latest earlier one
-export function categoryFor(personId, semester, statuses, semesterOrder) {
-  const own = statuses.filter((s) => s.person_id === personId);
-  const exact = own.find((s) => s.semester === semester);
-  if (exact) return exact.category;
-  const idx = semesterOrder.indexOf(semester);
-  const earlier = own
-    .filter((s) => semesterOrder.indexOf(s.semester) <= idx)
-    .sort((a, b) => semesterOrder.indexOf(b.semester) - semesterOrder.indexOf(a.semester));
-  return earlier[0]?.category || null;
+export const counts = (r) => r && (CORE.includes(r.category) || (r.category === 'New Comer' && r.active));
+export const groupOfRow = (r) => (r.category === 'New Comer' ? (r.active ? 'Active New Comer' : 'Inactive New Comer') : r.category);
+export const pct = (v) => (v == null || Number.isNaN(v) ? '–' : `${Math.round(v * 100)}%`);
+
+/* index attendance rows: bySunday[sunday] = rows[], byPerson[id] = { sunday: row } */
+export function indexAttendance(rows) {
+  const bySunday = {}, byPerson = {};
+  for (const r of rows) {
+    (bySunday[r.sunday] ||= []).push(r);
+    (byPerson[r.person_id] ||= {})[r.sunday] = r;
+  }
+  const held = Object.keys(bySunday).filter((s) => bySunday[s].some((r) => r.status === 'Present')).sort();
+  return { bySunday, byPerson, held, heldSet: new Set(held) };
 }
 
-export function groupOf(person) {
-  if (person.category === 'New Comer') return person.nc_active ? 'Active New Comer' : null;
-  return FOLLOW_GROUPS.includes(person.category) ? person.category : null;
+/* new comer state machine: is the person active on Sunday `s` (decided from Sundays before it)? */
+export function activeOn(personMarks = {}, held, s) {
+  let state = null, ab = 0, pr = 0;
+  for (const d of held) {
+    if (d >= s) break;
+    const st = personMarks[d]?.status;
+    if (!st) continue;
+    if (state === null) { if (st === 'Present') state = true; continue; }
+    if (state) { ab = st === 'Absent' ? ab + 1 : 0; if (ab >= 4) { state = false; pr = 0; } }
+    else { pr = st === 'Present' ? pr + 1 : 0; if (pr >= 3) { state = true; ab = 0; } }
+  }
+  if (state === null) return !Object.keys(personMarks).some((d) => d < s); // brand-new = active; never came = not
+  return state;
 }
 
-/**
- * people: [{id,name,category,nc_active,week_joined,responsible}]
- * mark(personId, sunday) -> 'Present' | 'Absent' | undefined
- * sundays: semester sundays (ISO), allSundays: previous + current (ISO, ascending)
- */
-export function buildStats({ people, sundays, allSundays, mark, weekIdx }) {
-  const presentCount = (s) => people.reduce((n, p) => n + (mark(p.id, s) === 'Present' ? 1 : 0), 0);
-  const heldSet = new Set(allSundays.filter((s) => presentCount(s) > 0));
-  const held = sundays.filter((s) => heldSet.has(s));
-  const lastHeldIdx = sundays.reduce((m, s, i) => (heldSet.has(s) ? i : m), -1);
-  const w = weekIdx ?? lastHeldIdx;
-  const thisWeek = w >= 0 ? sundays[w] : null;
-  const lastWeek = w >= 1 ? sundays[w - 1] : null;
-  const heldToW = sundays.filter((s, i) => i <= w && heldSet.has(s));
-
-  const rows = people.map((p) => {
-    const present = heldToW.filter((s) => mark(p.id, s) === 'Present').length;
-    // absent streak ending this week
-    let streak = 0;
-    for (let i = w; i >= 0; i--) { if (mark(p.id, sundays[i]) === 'Absent') streak++; else break; }
-    // consistent = 4+ Present in a row at some point before this week (incl. previous semester)
-    const before = allSundays.filter((s) => thisWeek && s < thisWeek && heldSet.has(s));
-    let run = 0, best = 0;
-    for (const s of before) { run = mark(p.id, s) === 'Present' ? run + 1 : 0; best = Math.max(best, run); }
-    // 6-month score since joining (182 days, across semesters)
-    // no recorded join week (existing people): count from their first Sunday with any mark
-    const join = p.week_joined || allSundays.find((x) => heldSet.has(x) && mark(p.id, x)) || allSundays[0];
-    const end = new Date(Date.parse(join) + 182 * 86400000).toISOString().slice(0, 10);
-    const win = allSundays.filter((s) => heldSet.has(s) && s >= join && s < end && (!thisWeek || s <= thisWeek));
-    const sixPresent = win.filter((s) => mark(p.id, s) === 'Present').length;
-    return {
-      ...p,
-      group: groupOf(p),
-      present,
-      pct: heldToW.length ? present / heldToW.length : null,
-      thisWeek: thisWeek ? mark(p.id, thisWeek) : undefined,
-      lastWeek: lastWeek ? mark(p.id, lastWeek) : undefined,
-      streak,
-      consistent: best >= 4,
-      sixPct: win.length ? sixPresent / win.length : null,
-    };
-  });
-
-  return { rows, held, heldSet, w, thisWeek, lastWeek, heldToW: heldToW.length };
+/* one Sunday summary */
+export function weekSummary(rows = []) {
+  const byCat = {};
+  for (const c of [...CATEGORIES, 'Active New Comer']) byCat[c] = { total: 0, present: 0 };
+  let present = 0, counted = 0, countedPresent = 0;
+  for (const r of rows) {
+    const p = r.status === 'Present';
+    if (p) present++;
+    if (byCat[r.category]) { byCat[r.category].total++; if (p) byCat[r.category].present++; }
+    if (r.category === 'New Comer' && r.active) { byCat['Active New Comer'].total++; if (p) byCat['Active New Comer'].present++; }
+    if (counts(r)) { counted++; if (p) countedPresent++; }
+  }
+  const m = byCat['Member'];
+  return {
+    present, counted, countedPresent, rate: counted ? countedPresent / counted : null,
+    memberRate: m.total ? m.present / m.total : null, byCat,
+  };
 }
 
-export function weeklyByCategory({ people, sundays, mark, heldSet }) {
-  return sundays.map((s) => {
-    const row = { sunday: s, held: heldSet.has(s), total: 0, newcomers: 0 };
-    for (const c of CATEGORIES) row[c] = 0;
-    for (const p of people) {
-      if (mark(p.id, s) === 'Present' && p.category) { row[p.category]++; row.total++; }
-    }
-    row.firstTimers = people.filter((p) => p.week_joined === s).length;
-    return row;
-  });
+/* per-person follow-up facts as of Sunday `s` */
+export function personFacts(p, marks = {}, held, s, semesterStart) {
+  const upto = held.filter((d) => d <= s);
+  const mine = upto.filter((d) => marks[d]?.status);
+  // absent streak ending at s
+  let streak = 0;
+  for (let i = upto.length - 1; i >= 0; i--) { if (marks[upto[i]]?.status === 'Absent') streak++; else break; }
+  // consistent: 4+ present in a row before s
+  let run = 0, best = 0, bestBefore = 0;
+  for (const d of upto) {
+    run = marks[d]?.status === 'Present' ? run + 1 : 0;
+    best = Math.max(best, run);
+    if (d < s) bestBefore = Math.max(bestBefore, run);
+  }
+  const sem = upto.filter((d) => !semesterStart || d >= semesterStart);
+  const semPresent = sem.filter((d) => marks[d]?.status === 'Present').length;
+  const semHeld = sem.filter((d) => marks[d] && counts(marks[d])).length || sem.length;
+  const join = p.week_joined || mine[0];
+  const since = join ? upto.filter((d) => d >= join) : [];
+  const sincePresent = since.filter((d) => marks[d]?.status === 'Present').length;
+  const prev = upto[upto.length - 2];
+  const firstPresent = upto.find((d) => marks[d]?.status === 'Present');
+  return {
+    thisWeek: marks[s]?.status, lastWeek: prev ? marks[prev]?.status : undefined,
+    streak, consistent: bestBefore >= 4, bestRun: best,
+    semPresent, semRate: sem.length ? semPresent / (semHeld || 1) : null,
+    sinceRate: since.length ? sincePresent / since.length : null, sinceCount: since.length, visits: upto.filter((d) => marks[d]?.status === 'Present').length,
+    lastSeen: [...upto].reverse().find((d) => marks[d]?.status === 'Present'),
+    firstPresent,
+    promising: p.category === 'New Comer' && since.length >= 4 && sincePresent / since.length >= 0.5 && best >= 4,
+  };
 }
-
-export const pct = (v) => (v == null ? '–' : `${Math.round(v * 100)}%`);

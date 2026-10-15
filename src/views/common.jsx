@@ -1,18 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { etLabel, fmtGreg, latestSunday, groupByMonth, toEthiopian, ET_MONTHS_AM } from '../lib/ethiopian';
-import { SHORT, pct } from '../lib/stats';
+import { etLabel, fmtGreg, groupByMonth, toEthiopian, sundaysOf, semesterOf, SEMESTERS, todayIso } from '../lib/ethiopian';
+import { pct } from '../lib/stats';
 
 export const CAT_COLOR = {
   'Leader': 'var(--c-leader)', 'Senior Leader': 'var(--c-senior)', 'Member': 'var(--c-member)',
   'Active Informal Member': 'var(--c-active)', 'Inactive Informal Member': 'var(--c-inactive)',
-  'New Comer': 'var(--c-newcomer)', 'Active New Comer': 'var(--c-newcomer)',
+  'New Comer': 'var(--c-newcomer)', 'Active New Comer': 'var(--c-newcomer)', 'Inactive New Comer': '#b8b0ea',
 };
 
-/* ───── icons (inline, stroke-based) ───── */
-const I = (d, extra) => (p) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true" {...p}>
-    {d}{extra}
-  </svg>
+const I = (d) => (p) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true" {...p}>{d}</svg>
 );
 export const Icon = {
   check: I(<path d="M5 12.5l4.5 4.5L19 7.5" />),
@@ -23,36 +20,44 @@ export const Icon = {
   search: I(<><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></>),
   phone: I(<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2" />),
   plus: I(<path d="M12 5v14M5 12h14" />),
-  roll: I(<><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M8 8h8M8 12h8M8 16h5" /></>),
+  home: I(<><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></>),
+  grid: I(<><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 10h18M9 4v16M15 4v16" /></>),
   bell: I(<><path d="M6 16V11a6 6 0 1112 0v5l2 2H4z" /><path d="M10 21h4" /></>),
-  chart: I(<><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>),
   people: I(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0" /><circle cx="17" cy="9" r="2.5" /><path d="M16 14.5a5 5 0 016 5" /></>),
+  card: I(<><rect x="3" y="5" width="18" height="14" rx="3" /><circle cx="9" cy="11" r="2.2" /><path d="M5.8 16a3.4 3.4 0 016.4 0M14 10h4M14 13h3" /></>),
+  layers: I(<><path d="M12 3l9 5-9 5-9-5z" /><path d="M3 13l9 5 9-5" /></>),
   shield: I(<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />),
+  more: I(<><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></>),
   cal: I(<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18M8 3v4M16 3v4" /></>),
   edit: I(<path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />),
+  book: I(<><path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2z" /><path d="M4 19V5" /></>),
+  star: I(<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" />),
+  eye: I(<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>),
+  trash: I(<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />),
+  user: I(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></>),
 };
 
-/* Adey Abeba (Meskel daisy) mark */
-export function Mark() {
+/* brand mark – a simple lime daisy (Adey Abeba) */
+export function Mark({ size = 36 }) {
   const petals = Array.from({ length: 8 }, (_, i) => (
-    <ellipse key={i} cx="17" cy="8.5" rx="3.3" ry="6.2" fill="#f4b23e" transform={`rotate(${i * 45} 17 17)`} />
+    <ellipse key={i} cx="18" cy="9" rx="3.4" ry="6.4" fill="#8dc63f" transform={`rotate(${i * 45} 18 18)`} />
   ));
   return (
-    <svg className="brand-mark" viewBox="0 0 34 34" aria-hidden="true">
-      <rect width="34" height="34" rx="10" fill="#2b3166" />
+    <svg className="brand-mark" style={{ width: size, height: size }} viewBox="0 0 36 36" aria-hidden="true">
+      <rect width="36" height="36" rx="11" fill="#1a2e14" />
       {petals}
-      <circle cx="17" cy="17" r="4.2" fill="#1c2145" />
+      <circle cx="18" cy="18" r="4.4" fill="#f6c343" />
     </svg>
   );
 }
 
-export function Initials({ name, category }) {
+export function Initials({ name, category, size }) {
   const parts = (name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/);
   const t = (parts[0]?.[0] || '') + (parts[1]?.[0] || '');
-  return <span className="initials" style={{ background: CAT_COLOR[category] || 'var(--ink-3)' }}>{t.toUpperCase()}</span>;
+  return <span className="initials" style={{ background: CAT_COLOR[category] || 'var(--ink-3)', ...(size ? { width: size, height: size } : {}) }}>{t.toUpperCase()}</span>;
 }
 
-export function Sheet({ title, onClose, children, head }) {
+export function Sheet({ title, onClose, children, head, wide }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', k);
@@ -61,7 +66,7 @@ export function Sheet({ title, onClose, children, head }) {
   }, [onClose]);
   return (
     <div className="sheet-bg" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} onClick={(e) => e.stopPropagation()}>
+      <div className="sheet" style={wide ? { maxWidth: 900 } : undefined} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="grab" />
         <div className="sheet-head">
           {head || <h3>{title}</h3>}
@@ -73,21 +78,60 @@ export function Sheet({ title, onClose, children, head }) {
   );
 }
 
-/* ───── Week picker: one compact control + a calendar sheet ───── */
-export function WeekPicker({ sundays, value, onChange, held, counts = {}, allowLatest, latest }) {
-  const [open, setOpen] = useState(false);
-  const today = latestSunday();
-  const shown = value || latest;
-  const selectable = sundays.filter((s) => s <= today || held?.has(s));
-  const idx = selectable.indexOf(shown);
-  const go = (d) => {
-    const n = selectable[idx + d];
-    if (n) onChange(allowLatest && n === latest ? null : n);
-  };
-  const e = shown ? toEthiopian(shown) : null;
-  const max = Math.max(1, ...Object.values(counts));
-  const weekNo = shown ? sundays.indexOf(shown) + 1 : 0;
+/* Calendar sheet: one semester at a time, each Sunday shaded by attendance rate.
+   info(sunday) -> { rate, present, program } */
+export function CalendarSheet({ value, onPick, onClose, info, title = 'Choose a Sunday', allowFuture, extra }) {
+  const [sem, setSem] = useState(semesterOf(value || todayIso()));
+  const today = todayIso();
+  const i = SEMESTERS.indexOf(sem);
+  const sundays = sundaysOf(sem);
+  return (
+    <Sheet title={title} onClose={onClose}>
+      {extra}
+      <div className="cal-nav">
+        <button className="icon-btn" disabled={i <= 0} onClick={() => setSem(SEMESTERS[i - 1])} aria-label="Previous semester"><Icon.left /></button>
+        <b>{sem} semester</b>
+        <button className="icon-btn" disabled={i >= SEMESTERS.length - 1} onClick={() => setSem(SEMESTERS[i + 1])} aria-label="Next semester"><Icon.right /></button>
+      </div>
+      <div className="months">
+        {groupByMonth(sundays).map((m) => (
+          <div className="month-row" key={m.month}>
+            <div className="month-name"><b>{m.name}</b><span className="am">{m.am}</span></div>
+            <div className="days">
+              {m.days.map(({ sunday, day }) => {
+                const inf = info?.(sunday) || {};
+                const ok = allowFuture || sunday <= today || inf.present;
+                const t = inf.rate ?? null;
+                const bg = t != null && inf.present ? `color-mix(in oklab, #4f8a12 ${Math.round(15 + t * 75)}%, #ffffff)` : undefined;
+                return (
+                  <button key={sunday} disabled={!ok}
+                    className={`day ${sunday === value ? 'on' : ''} ${sunday === today ? 'today' : ''}`}
+                    style={{ background: bg, color: t != null && t > 0.5 && inf.present ? '#fff' : undefined }}
+                    onClick={() => { onPick(sunday); onClose(); }}
+                    aria-label={`${etLabel(sunday, true)}${inf.present ? `, ${inf.present} present, ${pct(t)}` : ''}${inf.program ? `, ${inf.program}` : ''}`}>
+                    {inf.program && <i title={inf.program} />}
+                    <b>{day}</b>
+                    <small>{inf.present ? pct(t) : sunday === today ? 'today' : fmtGreg(sunday).replace(' ', ' ')}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="legend-scale"><span>Lower</span><i className="scale" /><span>Higher attendance %</span><span className="row" style={{ gap: 4 }}><i style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--c-newcomer)', display: 'inline-block' }} /> program recorded</span></div>
+    </Sheet>
+  );
+}
 
+/* Compact Sunday selector with ‹ › and a calendar */
+export function WeekPicker({ value, onChange, held, info, latest, allowLatest }) {
+  const [open, setOpen] = useState(false);
+  const shown = value || latest;
+  const list = held;
+  const idx = list.indexOf(shown);
+  const go = (d) => { const n = list[idx + d]; if (n) onChange(allowLatest && n === latest ? null : n); };
+  const e = shown ? toEthiopian(shown) : null;
   return (
     <>
       <div className="weekbar">
@@ -95,53 +139,21 @@ export function WeekPicker({ sundays, value, onChange, held, counts = {}, allowL
         <button className="current" onClick={() => setOpen(true)} aria-label="Choose a Sunday">
           {e ? (
             <>
-              <span className="cal"><small>{etLabel(shown).split(' ')[0].slice(0, 3)}</small><b>{e.day}</b></span>
-              <span>
+              <span className="cal-chip"><small>{etLabel(shown).slice(0, 3)}</small><b>{e.day}</b></span>
+              <span style={{ minWidth: 0 }}>
                 <span className="w-main">{etLabel(shown, true)}</span>
-                <span className="w-sub" style={{ display: 'block' }}>
-                  {fmtGreg(shown)} · week {weekNo} of {sundays.length}{allowLatest && !value ? ' · latest' : ''}
-                </span>
+                <span className="w-sub">{fmtGreg(shown)}{allowLatest && !value ? ' · latest Sunday' : ''}{info?.(shown)?.program ? ` · ${info(shown).program}` : ''}</span>
               </span>
             </>
           ) : <span className="w-main">No Sundays yet</span>}
           <span className="chev"><Icon.cal /></span>
         </button>
-        <button className="arrow" onClick={() => go(1)} disabled={idx < 0 || idx >= selectable.length - 1} aria-label="Next Sunday"><Icon.right /></button>
+        <button className="arrow" onClick={() => go(1)} disabled={idx < 0 || idx >= list.length - 1} aria-label="Next Sunday"><Icon.right /></button>
       </div>
       {open && (
-        <Sheet title="Choose a Sunday" onClose={() => setOpen(false)}>
-          {allowLatest && (
-            <button className="btn ghost wide" style={{ marginBottom: 14 }} onClick={() => { onChange(null); setOpen(false); }}>
-              Always show the latest Sunday
-            </button>
-          )}
-          <div className="months">
-            {groupByMonth(sundays).map((m) => (
-              <div className="month-row" key={m.month}>
-                <div className="month-name"><b>{m.name}</b><span className="am">{m.am}</span></div>
-                <div className="days">
-                  {m.days.map(({ sunday, day }) => {
-                    const c = counts[sunday];
-                    const ok = selectable.includes(sunday);
-                    const t = c ? c / max : 0;
-                    const bg = c ? `color-mix(in oklab, #2a78d6 ${Math.round(18 + t * 70)}%, #ffffff)` : undefined;
-                    return (
-                      <button key={sunday} disabled={!ok}
-                        className={`day ${sunday === shown ? 'on' : ''} ${sunday === today ? 'today' : ''}`}
-                        style={{ background: bg, color: t > 0.55 ? '#fff' : undefined }}
-                        onClick={() => { onChange(allowLatest && sunday === latest ? null : sunday); setOpen(false); }}
-                        aria-label={`${etLabel(sunday, true)}${c ? `, ${c} present` : ''}`}>
-                        <b>{day}</b>
-                        <small>{c ? `${c} came` : sunday === today ? 'today' : fmtGreg(sunday).replace(' ', '\u00a0')}</small>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="legend-scale"><span>Fewer</span><i /><span>More present</span></div>
-        </Sheet>
+        <CalendarSheet value={shown} info={info} onClose={() => setOpen(false)}
+          onPick={(s) => onChange(allowLatest && s === latest ? null : s)}
+          extra={allowLatest && <button className="btn ghost wide" style={{ marginBottom: 14 }} onClick={() => { onChange(null); setOpen(false); }}>Always show the latest Sunday</button>} />
       )}
     </>
   );
@@ -150,24 +162,21 @@ export function WeekPicker({ sundays, value, onChange, held, counts = {}, allowL
 export function Meter({ v, color = 'var(--present)' }) {
   return (
     <span className="meter">
-      <span className="track"><span style={{ width: `${(v || 0) * 100}%`, background: color }} /></span>
+      <span className="track"><span style={{ width: `${Math.min(1, v || 0) * 100}%`, background: color }} /></span>
       <b>{pct(v)}</b>
     </span>
   );
 }
 
-export function Ring({ value, total, label }) {
-  const r = 36, c = 2 * Math.PI * r, f = total ? value / total : 0;
-  return (
-    <div className="ring">
-      <svg viewBox="0 0 84 84">
-        <circle cx="42" cy="42" r={r} fill="none" stroke="var(--line-2)" strokeWidth="9" />
-        <circle cx="42" cy="42" r={r} fill="none" stroke="var(--present)" strokeWidth="9" strokeLinecap="round"
-          strokeDasharray={`${c * f} ${c}`} style={{ transition: 'stroke-dasharray .3s' }} />
-      </svg>
-      <div className="ring-num"><div><b>{value}</b><small>{label}</small></div></div>
-    </div>
-  );
+export function Delta({ d, suffix = '', invert }) {
+  if (d == null || Number.isNaN(d)) return null;
+  const r = Math.round(d * 10) / 10;
+  const good = invert ? r < 0 : r > 0;
+  return <span className={`delta ${r === 0 ? 'flat' : good ? 'up' : 'down'}`}>{r > 0 ? '▲' : r < 0 ? '▼' : '='} {Math.abs(r)}{suffix}</span>;
+}
+
+export function MiniDots({ statuses }) {
+  return <span className="mini-dots" aria-label="Last Sundays">{statuses.map((s, i) => <i key={i} className={s === 'Present' ? 'P' : s === 'Absent' ? 'A' : ''} />)}</span>;
 }
 
 export function useWidth() {
@@ -182,57 +191,7 @@ export function useWidth() {
   return [ref, w];
 }
 
-/* ───── Person sheet: attendance strip + quick facts ───── */
-export function PersonSheet({ person, sundays, mark, att, onClose, onEdit }) {
-  const today = latestSunday();
-  const months = groupByMonth(sundays);
-  const reasons = sundays.map((s) => att[`${person.id}|${s}`]).filter((r) => r?.reason);
-  return (
-    <Sheet onClose={onClose} head={
-      <div className="p-head">
-        <Initials name={person.name} category={person.category} />
-        <div>
-          <h3>{person.name}</h3>
-          <div className="pmeta">
-            <span className="dot" style={{ background: CAT_COLOR[person.category] }} />{SHORT[person.category] || person.category}
-            {person.category === 'New Comer' && <span className={`tag ${person.nc_active ? 'ok' : ''}`}>{person.nc_active ? 'Active' : 'Inactive'}</span>}
-            {person.responsible && <span>· with {person.responsible}</span>}
-          </div>
-        </div>
-      </div>
-    }>
-      <div className="p-stats">
-        <div className="p-stat"><b>{pct(person.pct)}</b><span>This semester</span></div>
-        <div className="p-stat"><b>{person.streak ? `${person.streak}` : '0'}</b><span>Weeks absent in a row</span></div>
-        <div className="p-stat"><b>{person.sixPct == null ? '–' : pct(person.sixPct)}</b><span>6-month score</span></div>
-      </div>
-      <div className="strip" aria-label="Attendance by Sunday">
-        {months.map((m) => [
-          <div key={m.month} className="strip-month">{m.name} <span className="am">{ET_MONTHS_AM[m.month]}</span></div>,
-          ...m.days.map(({ sunday, day }) => {
-            const st = mark(person.id, sunday);
-            const cls = st === 'Present' ? 'P' : st === 'Absent' ? 'A' : sunday > today ? 'F' : 'N';
-            return (
-              <div key={sunday} className="strip-cell" title={`${etLabel(sunday)}: ${st || 'not marked'}`}>
-                <i className={cls}>{cls === 'P' ? '✓' : cls === 'A' ? '✕' : ''}</i>
-                <small>{day}</small>
-              </div>
-            );
-          }),
-        ])}
-      </div>
-      {reasons.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          <div className="card-sub" style={{ marginBottom: 6 }}>Notes</div>
-          {reasons.map((r) => <div key={r.sunday} className="small"><b>{etLabel(r.sunday)}:</b> {r.reason}</div>)}
-        </div>
-      )}
-      <div className="row-actions" style={{ marginTop: 18 }}>
-        {person.phone && person.phone.replace(/\D/g, '').length > 6
-          ? <a className="btn gold" href={`tel:${person.phone.replace(/\s/g, '')}`}><Icon.phone /> Call {person.phone}</a>
-          : <span className="muted small">No phone number saved</span>}
-        {onEdit && <button className="btn ghost" onClick={onEdit}><Icon.edit /> Edit</button>}
-      </div>
-    </Sheet>
-  );
-}
+export const telLink = (phone) => {
+  const d = (phone || '').replace(/[^\d+]/g, '');
+  return d.replace(/\D/g, '').length > 8 ? `tel:${d}` : null;
+};

@@ -6,3 +6,7 @@ dist
 # personal data – never commit
 supabase/import/
 supabase/gaius_setup.sql
+
+# personal data – never commit
+supabase/v2_data.sql
+supabase/gaius_v2_upgrade.sql
