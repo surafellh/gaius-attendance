@@ -18,10 +18,11 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState(undefined);
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = supabase.auth.onAuthStateChange((e, s) => { setSession(s); if (e === 'PASSWORD_RECOVERY') setRecovery(true); });
     return () => data.subscription.unsubscribe();
   }, []);
   useEffect(() => {
@@ -31,6 +32,7 @@ export default function App() {
   }, [session]);
 
   if (!ready) return <div className="center muted">Loading…</div>;
+  if (recovery) return <Auth recovery onRecovered={() => setTimeout(() => setRecovery(false), 1200)} />;
   if (!session) return <Auth />;
   if (profile === undefined) return <div className="center muted">Loading…</div>;
   if (!profile || !can(profile).read) {
