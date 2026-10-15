@@ -14,6 +14,7 @@ import Auth from './views/Auth';
 import Meeting from './views/Meeting';
 import CalendarPage from './views/CalendarPage';
 import Leadership from './views/Leadership';
+import ExportSheet from './views/ExportSheet';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 
@@ -79,6 +80,7 @@ function Main({ profile }) {
   const [error, setError] = useState('');
   const [D, setD] = useState({ people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true });
   const [personId, setPersonId] = useState(null);
+  const [exporting, setExporting] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
 
   const load = useCallback(async () => {
@@ -179,7 +181,7 @@ function Main({ profile }) {
 
   const ctx = {
     profile, perm, D, idx, latest, today, progBy, personBy, summaries, calInfo, rosterFor,
-    saveMark, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek,
+    saveMark, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek, openExport: (o) => setExporting(o || {}),
     semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: setTab,
   };
 
@@ -236,6 +238,7 @@ function Main({ profile }) {
         )}
       </main>
 
+      {exporting && <ExportSheet ctx={ctx} initial={exporting} onClose={() => setExporting(null)} />}
       {personId && personBy[personId] && <PersonSheet {...ctx} person={personBy[personId]} onClose={() => setPersonId(null)} />}
       {more && (
         <Sheet title="More" onClose={() => setMore(false)}>
@@ -258,6 +261,7 @@ function Main({ profile }) {
         <Sheet title="Account" onClose={() => setMenu(false)}>
           <p><b>{profile.full_name}</b></p>
           <p className="muted small" style={{ marginBottom: 16 }}>{profile.email} · {roleName(profile.role)}{profile.title ? ` · ${profile.title}` : ''}</p>
+          <button className="btn lime wide" style={{ marginBottom: 10 }} onClick={() => { setMenu(false); setExporting({}); }}>Export reports (Excel / PDF)</button>
           <button className="btn ghost wide" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </Sheet>
       )}

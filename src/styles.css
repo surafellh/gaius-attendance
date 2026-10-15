@@ -520,3 +520,8 @@ legend { font-size: .85rem; font-weight: 800; padding: 0 6px; }
 }
 .pn-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) { .pname-cell .pn { overflow: visible; flex-wrap: wrap; row-gap: 2px; } .pn-t { overflow: visible; overflow-wrap: anywhere; } .nc-tag { margin-top: 0; } }
+.export-kinds { display: grid; gap: 8px; }
+.export-kind { text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.export-kind span { font-size: .78rem; color: var(--muted); }
+.export-kind.on { border-color: var(--lime-strong); background: var(--lime-tint); box-shadow: 0 0 0 3px rgba(141, 198, 63, .25); }
+.export-btn { flex: none; } @media (max-width: 600px) { .export-btn { flex: 1 1 100%; justify-content: center; } }

@@ -13,7 +13,7 @@ const GROUP_ROWS = [
 ];
 const monthKey = (s) => { const e = toEthiopian(s); return `${e.year}-${String(e.month).padStart(2, '0')}`; };
 
-export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today }) {
+export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today, openExport }) {
   const [range, setRange] = useState('semester');
   const [hidden, setHidden] = useState(() => new Set());
   const [rankGroup, setRankGroup] = useState('Member');
@@ -155,6 +155,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             {semOptions.map((x) => <option key={x} value={x} disabled={!idx.held.some((s) => s >= semesterStart(x) && s <= semesterEnd(x))}>{x}</option>)}
           </select>
         </label>
+        <button className="btn ghost export-btn" onClick={() => openExport({ kind: 'semester', sem })}><Icon.book width="18" height="18" /> Export</button>
       </div>
 
       <Reminders D={D} today={today} go={go} />

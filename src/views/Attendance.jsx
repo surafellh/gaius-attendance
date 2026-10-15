@@ -12,7 +12,7 @@ const GROUPS = [
 ];
 export const PROGRAM_KINDS = ['Teaching', 'Devotion', 'Discussion', 'Worship night', 'Prayer', 'Training', 'Special program', 'Fellowship / get-together', 'Outreach', 'Department program', 'No meeting'];
 
-export default function Attendance({ latest, today, rosterFor, idx, saveMark, createRoll, saveProgram, progBy, perm, openPerson, D, calInfo, reload, setError }) {
+export default function Attendance({ latest, today, rosterFor, idx, saveMark, createRoll, saveProgram, progBy, perm, openPerson, D, calInfo, reload, setError, openExport }) {
   const [month, setMonth] = useState(() => monthOf(latest));
   const [q, setQ] = useState('');
   const [open, setOpen] = useState({ 'Inactive Informal Member': false });
@@ -65,6 +65,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
           <input placeholder="Find a person…" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         {perm.mark && <button className="btn ghost" onClick={() => setReport(true)}><Icon.book /> Paste report</button>}
+        <button className="btn ghost" onClick={() => openExport({ kind: 'month', month })} aria-label="Export this month"><Icon.grid /> <span className="desk-only">Export</span></button>
       </div>
 
       <div className="grid-wrap">
