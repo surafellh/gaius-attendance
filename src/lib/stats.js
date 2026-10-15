@@ -128,3 +128,9 @@ export function readiness(p, marks = {}, held, s, semesterStart) {
     first, weeksIn: sinceFirst.length, sixDone: !!first && first <= from, sixEnd: first ? shift(first, SIX_MONTHS) : null,
   };
 }
+
+/* Leadership path: Member → candidate (still a member) → potential leader (joins the leadership team, group = Leader) → leader.
+   Leaders can also join directly when HQ or Pastor Fitsum assigns them. */
+export const stageOf = (p) => p?.leader_stage || (p?.potential_leader ? 'potential' : null);
+export const STAGE_LABEL = { candidate: 'Leadership candidate', potential: 'Potential leader' };
+export const JOIN_WAYS = ['Grew through the leadership path', 'Assigned by HQ', 'Appointed by Pastor Fitsum'];

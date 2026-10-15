@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
-import { ONE, pct, personFacts } from '../lib/stats';
+import { ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/stats';
+import LeaderStage from './LeaderStage';
 import { Drawer, Sheet, Initials, Icon, CAT_COLOR } from './common';
 
 const RECS = ['Keep growing', 'Ready to serve as leader', 'Not now'];
@@ -18,7 +19,7 @@ export default function Leadership({ D, idx, latest, today, perm, profile, reloa
   const cid = D.center?.id || 1;
   const criteria = D.criteria.filter((c) => c.active && (c.center_id == null || c.center_id === cid));
   const semStart = semesterStart(semesterOf(latest));
-  const people = D.people.filter((p) => p.potential_leader && !p.archived);
+  const people = D.people.filter((p) => stageOf(p) && !p.archived);
   const cards = useMemo(() => people.map((p) => {
     const evs = D.evals.filter((e) => e.person_id === p.id).sort((a, b) => a.evaluated_on.localeCompare(b.evaluated_on) || a.id - b.id);
     const last = evs[evs.length - 1];
@@ -31,21 +32,26 @@ export default function Leadership({ D, idx, latest, today, perm, profile, reloa
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">Leadership</h1><p className="page-sub">Potential leaders, scored on the same criteria each time so growth is visible over months.</p></div>
+        <div><h1 className="page-title">Leadership</h1><p className="page-sub">Candidates (members) → potential leaders (in the leadership team) → leaders. Scored on the same areas each time so growth shows over months.</p></div>
         <div className="row">
           {perm.manage && <button className="btn ghost" onClick={() => setCrit(true)}>Criteria ({criteria.length})</button>}
           {perm.manage && <button className="btn lime" onClick={() => setPick(true)}><Icon.plus /> Add someone</button>}
         </div>
       </div>
-      {cards.length === 0 && <div className="card empty">No potential leaders yet. Mark someone with “Add someone”, or tick “potential leader” on their profile.</div>}
+      {cards.length === 0 && <div className="card empty">No potential leaders yet. Use “Add someone” to start a member on the leadership path, or change it from a person’s card.</div>}
+      {[['potential', 'Potential leaders', 'Already in the leadership team – they count as leaders.'], ['candidate', 'Leadership candidates', 'Members being prepared to join the leadership team.']].map(([st, title, sub]) => {
+        const group = cards.filter((c) => stageOf(c.p) === st);
+        return group.length > 0 && (
+      <section key={st} className="page" style={{ gap: 8 }}>
+      <div><div className="card-title">{title} <span className="muted">({group.length})</span></div><div className="card-sub">{sub}</div></div>
       <div className="people-grid">
-        {cards.map(({ p, evs, last, avg, trend, f }) => (
+        {group.map(({ p, evs, last, avg, trend, f }) => (
           <button key={p.id} className="pcard lead-card" onClick={() => setOpen(p.id)}>
             <Initials name={p.name} category={p.category} />
             <span className="pinfo">
               <span className="pname">{p.full_name || p.name}</span>
               <span className="pmeta">
-                <span className="dot" style={{ background: CAT_COLOR[p.category] }} />{ONE[p.category]}
+                <span className="dot" style={{ background: CAT_COLOR[p.category] }} />{STAGE_LABEL[stageOf(p)] || ONE[p.category]}
                 <span>{pct(f.semRate)} this semester</span>
                 {last ? <span>{evs.length} evaluation{evs.length > 1 ? 's' : ''} · last {etLabel(last.evaluated_on)}</span> : <span className="tag">not evaluated yet</span>}
                 {last?.recommendation && <span className={`tag ${REC_TAG[last.recommendation]}`}>{last.recommendation}</span>}
@@ -58,10 +64,13 @@ export default function Leadership({ D, idx, latest, today, perm, profile, reloa
           </button>
         ))}
       </div>
-      {sel && <PersonEval c={sel} criteria={criteria} perm={perm} profile={profile} today={today} cid={cid} onClose={() => setOpen(null)} reload={reload} setError={setError} openPerson={openPerson} />}
+      </section>
+        );
+      })}
+      {sel && <PersonEval c={sel} criteria={criteria} perm={perm} profile={profile} today={today} cid={cid} idx={idx} latest={latest} onClose={() => setOpen(null)} reload={reload} setError={setError} openPerson={openPerson} />}
       {crit && <CriteriaSheet all={D.criteria.filter((c) => c.center_id == null || c.center_id === cid)} cid={cid} admin={perm.admin} onClose={() => setCrit(false)} reload={reload} setError={setError} />}
       {pick && <PickSheet D={D} onClose={() => setPick(false)} onPick={async (id) => {
-        const { error } = await supabase.from('people').update({ potential_leader: true }).eq('id', id);
+        const { error } = await supabase.from('people').update({ leader_stage: 'candidate' }).eq('id', id);
         if (error) setError(`Not saved: ${error.message}`); setPick(false); reload();
       }} />}
     </div>
@@ -80,7 +89,8 @@ function Spark({ values }) {
   );
 }
 
-function PersonEval({ c, criteria, perm, profile, today, cid, onClose, reload, setError, openPerson }) {
+function PersonEval({ c, criteria, perm, profile, today, cid, idx, latest, onClose, reload, setError, openPerson }) {
+  const [stageOpen, setStageOpen] = useState(false);
   const { p, evs, f } = c;
   const [form, setForm] = useState(null);
   async function save(e) {
@@ -95,7 +105,7 @@ function PersonEval({ c, criteria, perm, profile, today, cid, onClose, reload, s
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   return (
     <Drawer onClose={onClose}
-      title={<div className="row" style={{ gap: 10 }}><Initials name={p.name} category={p.category} /><div><h3>{p.full_name || p.name}</h3><div className="small muted">{ONE[p.category]} · {pct(f.semRate)} this semester · {f.visits} Sundays on record</div></div></div>}
+      title={<div className="row" style={{ gap: 10 }}><Initials name={p.name} category={p.category} /><div><h3>{p.full_name || p.name}</h3><div className="small muted">{ONE[p.category]}{stageOf(p) ? ` · ${STAGE_LABEL[stageOf(p)]}` : ''} · {pct(f.semRate)} this semester</div></div></div>}
       footer={form ? <><button key="cancel" type="button" className="btn ghost" onClick={() => setForm(null)}>Cancel</button><button key="save" type="submit" className="btn lime" form="eval-form">Save evaluation</button></>
         : <><button key="card" type="button" className="btn ghost" onClick={() => { onClose(); openPerson(p.id); }}>Attendance card</button>{perm.manage && <button key="new" type="button" className="btn lime" onClick={() => setForm(blank)}><Icon.plus width="16" height="16" /> New evaluation</button>}</>}>
       {form ? (
@@ -122,7 +132,17 @@ function PersonEval({ c, criteria, perm, profile, today, cid, onClose, reload, s
           <label>Next steps (mentoring, a task to try)<textarea rows={2} value={form.next_steps || ''} onChange={set('next_steps')} /></label>
           <label>Recommendation<select value={form.recommendation || ''} onChange={set('recommendation')}><option value="">—</option>{RECS.map((r) => <option key={r}>{r}</option>)}</select></label>
         </form>
-      ) : evs.length === 0 ? <p className="muted">No evaluations yet.{perm.manage ? ' Start the first one with “New evaluation”.' : ''}</p> : (
+      ) : <>
+        {perm.manage && (
+          <div className="stage-box">
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <span><b>Leadership stage:</b> {stageOf(p) ? STAGE_LABEL[stageOf(p)] : ONE[p.category]}</span>
+              {!stageOpen && <button type="button" className="btn ghost small" onClick={() => setStageOpen(true)}>Change</button>}
+            </div>
+            {stageOpen && <LeaderStage p={p} idx={idx} latest={latest} reload={reload} setError={setError} onDone={() => { setStageOpen(false); if (!['candidate', 'potential'].includes(stageOf(p))) onClose(); }} />}
+          </div>
+        )}
+        {evs.length === 0 ? <p className="muted">No evaluations yet.{perm.manage ? ' Start the first one with “New evaluation”.' : ''}</p> : (
         <>
           <div className="form-section">Progress</div>
           <div style={{ overflowX: 'auto' }}>
@@ -149,7 +169,8 @@ function PersonEval({ c, criteria, perm, profile, today, cid, onClose, reload, s
             </div>
           ))}
         </>
-      )}
+        )}
+      </>}
     </Drawer>
   );
 }
@@ -185,10 +206,10 @@ function CriteriaSheet({ all, cid, admin, onClose, reload, setError }) {
 
 function PickSheet({ D, onClose, onPick }) {
   const [q, setQ] = useState('');
-  const list = D.people.filter((p) => !p.archived && !p.potential_leader && ['Member', 'Active Informal Member', 'Leader'].includes(p.category))
+  const list = D.people.filter((p) => !p.archived && !stageOf(p) && ['Member', 'Active Informal Member'].includes(p.category))
     .filter((p) => !q || [p.name, p.full_name].some((v) => (v || '').toLowerCase().includes(q.toLowerCase())));
   return (
-    <Sheet title="Add a potential leader" onClose={onClose}>
+    <Sheet title="Add a leadership candidate" onClose={onClose}>
       <label className="search" style={{ marginBottom: 10 }}><Icon.search /><input autoFocus placeholder="Search members…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       {list.map((p) => (
         <button key={p.id} className="list-row" style={{ border: 0, background: 'none', width: '100%', textAlign: 'left' }} onClick={() => onPick(p.id)}>

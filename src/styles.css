@@ -499,3 +499,24 @@ legend { font-size: .85rem; font-weight: 800; padding: 0 6px; }
 @media (max-width: 600px) { .mob-only { display: block; margin-top: 4px; } .plan-table td, .plan-table th { white-space: normal; font-size: .8rem; } }
 .month-bar .current { min-width: 0; }
 .month-bar .w-sub { white-space: normal; }
+.stage-box { border: 1px solid var(--line); background: var(--lime-tint); border-radius: 14px; padding: 12px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; font-size: .9rem; }
+
+/* ───────── phone fit: wrap instead of trimming ───────── */
+.rank-name { white-space: normal; overflow-wrap: anywhere; }
+.drawer-foot { flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .seg { flex-wrap: wrap; overflow: visible; }
+  .card-head > .seg, .page-head > .seg { width: 100%; }
+  .w-sub { white-space: normal; }
+  .pname { white-space: normal; overflow-wrap: anywhere; }
+  .pname-cell .pn { white-space: normal; line-height: 1.2; overflow-wrap: anywhere; }
+  .pname-cell .ps { white-space: normal; line-height: 1.25; }
+  .hide-sm { display: none; }
+  .gtable .delta { display: block; font-size: .68rem; }
+  .gtable { font-size: .82rem; }
+  .drawer-foot .btn { flex: 1 1 140px; justify-content: center; }
+  .page-head { flex-wrap: wrap; }
+  .page-head > .row { flex-wrap: wrap; }
+}
+.pn-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .pname-cell .pn { overflow: visible; flex-wrap: wrap; row-gap: 2px; } .pn-t { overflow: visible; overflow-wrap: anywhere; } .nc-tag { margin-top: 0; } }

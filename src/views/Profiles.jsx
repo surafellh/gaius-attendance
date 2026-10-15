@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
-import { ONE, pct, personFacts } from '../lib/stats';
+import { ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/stats';
 import { Drawer, Initials, Icon, CAT_COLOR } from './common';
 
 export const PROFILE_FIELDS = [
@@ -11,8 +11,9 @@ export const PROFILE_FIELDS = [
 ];
 const TABS = [
   ['members', 'Members', (p) => p.category === 'Member'],
-  ['leaders', 'Leaders', (p) => ['Leader', 'Senior Leader'].includes(p.category)],
-  ['potential', 'Potential leaders', (p) => p.potential_leader],
+  ['leaders', 'Leaders', (p) => ['Leader', 'Senior Leader'].includes(p.category) && stageOf(p) !== 'potential'],
+  ['potential', 'Potential leaders', (p) => stageOf(p) === 'potential'],
+  ['candidates', 'Leadership candidates', (p) => stageOf(p) === 'candidate'],
   ['promising', 'Promising new comers', null],
   ['informal', 'Informal members', (p) => ['Active Informal Member', 'Inactive Informal Member'].includes(p.category)],
 ];
@@ -76,7 +77,6 @@ export default function Profiles({ D, idx, latest, perm, openPerson, reload, set
 export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true, onOpenCard, people = [] }) {
   const keys = ['name', ...PROFILE_FIELDS.map(([k]) => k), 'invited_by', 'notes'];
   const [f, setF] = useState(() => Object.fromEntries(keys.map((k) => [k, person[k] ?? ''])));
-  const [potential, setPotential] = useState(!!person.potential_leader);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const age = f.birth_year ? new Date().getFullYear() - Number(f.birth_year) : null;
@@ -87,7 +87,6 @@ export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true
     if (!patch.name) patch.name = person.name;
     const inviter = people.find((p) => p.name.toLowerCase() === (patch.invited_by || '').toLowerCase());
     patch.invited_by_id = inviter?.id || null;
-    patch.potential_leader = potential;
     patch.updated_at = new Date().toISOString();
     const { error } = await supabase.from('people').update(patch).eq('id', person.id);
     setBusy(false);
@@ -132,7 +131,7 @@ export function ProfileForm({ person, onClose, onSaved, setError, canEdit = true
           <label>Level<input disabled={dis} value={f.level} onChange={set('level')} placeholder="1, 2, 3…" /></label>
           <label>First teaching (roadmap)<input disabled={dis} value={f.start_teaching} onChange={set('start_teaching')} placeholder="e.g. ተሃድሶ, ወንጌል" /></label>
         </div>
-        <label className="check"><input type="checkbox" disabled={dis} checked={potential} onChange={(e) => setPotential(e.target.checked)} /> Being considered as a potential leader</label>
+        {stageOf(person) && <p className="small muted" style={{ margin: 0 }}><span className="tag sun">{STAGE_LABEL[stageOf(person)]}</span> Change it from the Leadership page or the person’s card.</p>}
         <label>Notes<textarea disabled={dis} rows={4} value={f.notes} onChange={set('notes')} placeholder="Anything the leaders should know" /></label>
         <datalist id="profile-people">{people.map((p) => <option key={p.id} value={p.name} />)}</datalist>
       </form>

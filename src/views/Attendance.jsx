@@ -113,7 +113,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMark, cr
                     <td className="sncol">{i + 1}</td>
                     <td className="namecol">
                       <button className="pname-cell" style={{ '--band-c': CAT_COLOR[k === 'New Comer' && !x.active ? 'Inactive New Comer' : k] }} onClick={() => openPerson(x.p.id)}>
-                        <span className="pn">{x.p.name}{k === 'New Comer' && <span className={`nc-tag ${x.active ? 'on' : ''}`}>{x.active ? 'active' : 'inactive'}</span>}</span>
+                        <span className="pn"><span className="pn-t">{x.p.name}</span>{k === 'New Comer' && <span className={`nc-tag ${x.active ? 'on' : ''}`}>{x.active ? 'active' : 'inactive'}</span>}</span>
                         {(x.p.invited_by || (k === 'New Comer' && x.p.week_joined)) && <span className="ps">{[x.p.invited_by && `via ${x.p.invited_by}`, k === 'New Comer' && x.p.week_joined && `since ${etLabel(x.p.week_joined)}`].filter(Boolean).join(' · ')}</span>}
                       </button>
                     </td>

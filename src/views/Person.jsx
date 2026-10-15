@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, groupByMonth, sundaysOf, semesterOf, semesterStart, SEMESTERS, ET_MONTHS_AM } from '../lib/ethiopian';
-import { CATEGORIES, ONE, pct, personFacts } from '../lib/stats';
+import { CATEGORIES, ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/stats';
 import { Sheet, Initials, Icon, CAT_COLOR, telLink } from './common';
 import { ProfileForm } from './Profiles';
+import LeaderStage from './LeaderStage';
 
 export default function PersonSheet({ person: p, onClose, idx, latest, today, D, perm, saveMark, reload, setError, personBy }) {
   const [sem, setSem] = useState(semesterOf(latest));
@@ -32,7 +33,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
             <span className="dot" style={{ background: CAT_COLOR[p.category] }} />{ONE[p.category] || 'No group'}
             {p.category === 'New Comer' && <span className={`tag ${p.nc_active ? 'ok' : ''}`}>{p.nc_active ? 'active' : 'inactive'}</span>}
             {f.promising && <span className="tag lime">promising</span>}
-            {p.potential_leader && <span className="tag sun"><Icon.star width="11" height="11" /> potential leader</span>}
+            {stageOf(p) && <span className="tag sun"><Icon.star width="11" height="11" /> {STAGE_LABEL[stageOf(p)].toLowerCase()}</span>}
             {p.archived && <span className="tag bad">left</span>}
           </div>
         </div>
@@ -117,6 +118,8 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
         <>
           <div className="section-title"><span>Manage</span>{!manage && <button className="btn ghost small" onClick={() => setManage(true)}>Change group or responsible</button>}</div>
           {manage && <Manage p={p} idx={idx} latest={latest} leaders={leaders} current={current} reload={reload} setError={setError} onDone={() => setManage(false)} />}
+          <div className="section-title">Leadership path</div>
+          <LeaderStage key={`${p.category}-${stageOf(p)}`} p={p} idx={idx} latest={latest} reload={reload} setError={setError} />
         </>
       )}
       {editProfile && <ProfileForm person={p} people={D.people} canEdit={perm.mark} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); reload(); }} setError={setError} />}
@@ -128,7 +131,6 @@ function Manage({ p, idx, latest, leaders, current, reload, setError, onDone }) 
   const [cat, setCat] = useState(p.category || 'New Comer');
   const [from, setFrom] = useState(latest);
   const [lead, setLead] = useState(current?.leader_id || '');
-  const [potential, setPotential] = useState(!!p.potential_leader);
   const [busy, setBusy] = useState(false);
   const recent = useMemo(() => idx.held.slice(-8).reverse(), [idx.held]);
 
@@ -149,7 +151,6 @@ function Manage({ p, idx, latest, leaders, current, reload, setError, onDone }) 
         if (leader) await supabase.from('assignments').insert({ person_id: p.id, leader_id: leader.id, leader_name: leader.name, since: today });
         await supabase.from('people').update({ responsible: leader?.name || null }).eq('id', p.id);
       }
-      if (potential !== !!p.potential_leader) await supabase.from('people').update({ potential_leader: potential }).eq('id', p.id);
       reload(); onDone();
     } catch (e) { setError(`Not saved: ${e.message}`); }
     setBusy(false);
@@ -171,7 +172,6 @@ function Manage({ p, idx, latest, leaders, current, reload, setError, onDone }) 
           {leaders.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </label>
-      <label className="check"><input type="checkbox" checked={potential} onChange={(e) => setPotential(e.target.checked)} /> Being considered as a potential leader</label>
       <p className="muted tiny">Earlier groups and responsible persons stay in the history.</p>
       <div className="row-actions">
         <button type="button" className="btn danger small" onClick={archive}>{p.archived ? 'Bring back' : 'Mark as left'}</button>

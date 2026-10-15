@@ -310,12 +310,12 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             </div>
           </div>
           <table className="gtable">
-            <thead><tr><th>Month</th><th>Sundays</th><th>Present</th><th>Rate</th><th>Members</th></tr></thead>
+            <thead><tr><th>Month</th><th className="hide-sm">Sundays</th><th>Present</th><th>Rate</th><th>Members</th></tr></thead>
             <tbody>
               {months.slice(-8).map((m) => (
                 <tr key={m.k}>
-                  <td>{m.name} <span className="am muted tiny">{m.am}</span>{range !== 'semester' && <span className="tiny muted"> {m.year}</span>}</td>
-                  <td className="num">{m.list.length}</td>
+                  <td>{m.name} <span className="am muted tiny hide-sm">{m.am}</span>{range !== 'semester' && <span className="tiny muted"> {m.year}</span>}</td>
+                  <td className="num hide-sm">{m.list.length}</td>
                   <td className="num">{m.present.toFixed(1)}</td>
                   <td className="num"><span className="bar-inline"><span style={{ width: `${m.rate * 100}%` }} /></span>{pct(m.rate)}</td>
                   <td className="num">{pct(m.members)}</td>
