@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS_AM, addDays, weekdayOf, WEEKDAYS } from '../lib/ethiopian';
 import { deptColor, deptName, itemsBetween, itemWhen } from '../lib/plans';
 import { Icon } from './common';
+import { planMaps, sameTopic } from '../lib/teaching';
 
 const DECISIONS = [['fits', 'Fits our plan', 'ok'], ['adjusted', 'We adjusted', 'lime'], ['clash', 'Clash – tell HQ', 'bad'], ['not_applicable', 'Not for our center', '']];
 
@@ -26,15 +27,16 @@ export default function Reconcile({ D, today, perm, progBy, reload, setError, pr
       const sundays = []; for (let d = a; d <= b; d = addDays(d, 1)) if (weekdayOf(d) === 0) sundays.push(d);
       out.push({ kind: 'event', id: e.id, date: a, title: e.title, sub: [e.kind, e.location, b !== a ? `until ${etLabel(b)}` : null].filter(Boolean).join(' · '), near, evs, sundays });
     }
-    for (const t of D.plan.filter((x) => x.center_id == null && x.sunday >= from && x.sunday <= to)) {
+    const pm = planMaps(D.plan, cid);
+    for (const t of [...pm.hq.values()].filter((x) => x.sunday >= from && x.sunday <= to)) {
       const prog = progBy[t.sunday];
       const near = ours.filter((i) => i.due === t.sunday);
-      const own = D.plan.find((x) => x.center_id === cid && x.sunday === t.sunday);
-      out.push({ kind: 'teaching', id: t.id, date: t.sunday, title: `HQ teaching: ${t.topic || '—'}`, sub: [t.series, t.teacher].filter(Boolean).join(' · '), near, evs: [], prog, own });
+      const own = pm.own.get(t.sunday);
+      out.push({ kind: 'teaching', id: t.id, date: t.sunday, title: `HQ teaching: ${t.topic || '—'}`, sub: [t.series, t.teacher].filter(Boolean).join(' · '), near, evs: [], prog, own, differs: !!(own?.topic && t.topic && !sameTopic(own.topic, t.topic)) });
     }
     return out.sort((a, b) => a.date.localeCompare(b.date));
   }, [D.events, D.plan, ours, ourEvents, from, to, progBy, cid]); // eslint-disable-line
-  const auto = (r) => (r.near.length || r.evs.length ? 'clash' : 'fits');
+  const auto = (r) => (r.near.length || r.evs.length || r.differs ? 'clash' : 'fits');
   const decided = (r) => recs.get(`${r.kind}|${r.id}`)?.decision || null;
   const counts = { clash: rows.filter((r) => (decided(r) || auto(r)) === 'clash').length, open: rows.filter((r) => !decided(r)).length };
 
@@ -78,6 +80,7 @@ export default function Reconcile({ D, today, perm, progBy, reload, setError, pr
                   <div className="rec-hq"><span className="tag lime">HQ</span> <b className="am">{r.title}</b>{r.sub && <span className="small muted"> · {r.sub}</span>}</div>
                   <div className="rec-ours">
                     {r.kind === 'teaching' && <span className="small">{r.prog?.kind ? <>Our Sunday: <b>{r.prog.kind}{r.prog.topic ? ` – ${r.prog.topic}` : ''}</b></> : <span className="muted">No program recorded yet for that Sunday.</span>}</span>}
+                    {r.own && <span className="small">Our teaching plan: <b className="am">{r.own.topic || r.own.series}</b>{r.differs && <span className="tag sun" style={{ marginLeft: 6 }}>differs from HQ</span>}</span>}
                     {r.near.map((i) => <span key={i.id} className="cal-chip plan" style={{ '--dc': deptColor(D, i.plan.department_id) }}><span className="am">{deptName(D, i.plan.department_id)}: {i.plan.title} · {itemWhen(i)}</span></span>)}
                     {r.evs.map((e) => <span key={e.id} className="cal-chip event am">Our event: {e.title}</span>)}
                     {!r.near.length && !r.evs.length && r.kind === 'event' && <span className="small muted">Nothing of ours on these days.</span>}

@@ -813,3 +813,29 @@ table.road .lesson-c { text-align: center; }
 .money-amt.in { color: #1c8a47; }
 .money-amt.out { color: #cf4a33; }
 .rec-ours .cal-chip { display: block; width: auto; max-width: 100%; } .rec-ours .cal-chip span { display: inline; white-space: normal; overflow: visible; }
+
+/* ── release 4 ─────────────────────────────────────────────── */
+.center-charts { display: grid; gap: 14px; }
+@media (min-width: 900px) { .center-charts { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 900px) { .page .kpis.six { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.edit-hint { color: var(--faint); font-size: .85em; }
+.import-box { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; border: 2px dashed var(--line); border-radius: 14px; background: var(--lime-soft, #f3f9ea); }
+.import-box .btn { flex: 1 1 220px; justify-content: center; }
+.file-btn { cursor: pointer; }
+tr.skipped td { opacity: .5; }
+.tp-hq { background: color-mix(in srgb, var(--lime, #8dc63f) 8%, transparent); }
+.tp-part + .tp-part { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.lbox.auto.on { background: var(--lime-soft); color: var(--lime-strong); border: 1.5px dashed var(--lime-strong); cursor: default; }
+.lbox.sm { width: 20px; height: 20px; min-width: 20px; display: inline-grid; place-items: center; font-size: .7rem; font-style: normal; }
+.topic-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.topic-list li { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; flex-wrap: wrap; }
+.topic-list li.on { border-color: var(--lime-strong, #5f9a1c); background: color-mix(in srgb, var(--lime, #8dc63f) 10%, transparent); }
+.topic-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; }
+.topic-main .tiny { overflow-wrap: anywhere; }
+.top-btn.on { background: var(--lime, #8dc63f); }
+.dl-group { font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 6px 0 -2px; }
+.period-pick { display: grid; gap: 8px; }
+.brand > div { min-width: 0; overflow: hidden; }
+.brand-name, .brand-sub { overflow: hidden; text-overflow: ellipsis; }
+.topbar-inner > .row { flex: none; }
+@media (max-width: 440px) { .center-switch { max-width: 96px; padding: 7px 8px; } .topbar-inner { gap: 8px; } .topbar-inner > .row { gap: 6px !important; } }

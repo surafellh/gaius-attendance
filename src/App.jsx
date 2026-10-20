@@ -64,12 +64,11 @@ export default function App() {
 
 /* Tab groups: Home · Follow-up (people) · Coordination (programs & plans) · Admin */
 const GROUPS = [
-  ['home', 'Home', Icon.home, [['home', 'Dashboard']]],
+  ['home', 'Home', Icon.home, [['home', 'Dashboard'], ['centers', 'All centers', 'switchCenter']]],
   ['follow', 'Follow-up', Icon.people, [['attendance', 'Attendance'], ['people', 'People'], ['calls', 'Calls'], ['leadership', 'Leadership'], ['roadmap', 'Roadmap']]],
   ['coord', 'Coordination', Icon.cal, [['calendar', 'Calendar'], ['plans', 'Plans & budget'], ['meeting', 'Meetings'], ['departments', 'Departments'], ['messages', 'Messages']]],
-  ['admin', 'Admin', Icon.shield, [['finance', 'Admin & finance', 'finance'], ['centers', 'All centers', 'switchCenter'], ['users', 'Users & access', 'users']]],
+  ['admin', 'Admin & finance', Icon.card, [['finance', 'Admin & finance', 'finance']]],
 ];
-const groupOf = (tab) => GROUPS.find((g) => g[3].some(([k]) => k === tab)) || GROUPS[0];
 
 function Main({ profile }) {
   const perm = can(profile);
@@ -78,7 +77,7 @@ function Main({ profile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [centerId, setCenterId] = useState(profile.center_id || 1);
-  const [R, setR] = useState({ centers: [], people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true, reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: true });
+  const [R, setR] = useState({ centers: [], people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true, reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: true, lessonTopics: [], r4: true });
   const [personId, setPersonId] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
@@ -108,6 +107,8 @@ function Main({ profile }) {
         const [reconcile, messages, reads, assets, ledger] = await Promise.all([q('hq_reconcile'), q('messages'), q('message_reads'), q('assets'), q('ledger')]);
         Object.assign(p2, { reconcile, messages: messages.sort((a, b) => a.created_at.localeCompare(b.created_at)), reads, assets, ledger, r3: true });
       } catch { Object.assign(p2, { reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: false }); }
+      // Release 4: roadmap lessons linked to program topics
+      try { Object.assign(p2, { lessonTopics: await q('lesson_topics'), r4: true }); } catch { Object.assign(p2, { lessonTopics: [], r4: false }); }
       setR({
         centers: centers.sort((a, b) => a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
         att, programs, departments: departments.sort((a, b) => a.sort - b.sort), members, assignments, history, ...p2,
@@ -222,10 +223,11 @@ function Main({ profile }) {
   }, [idx, latest, personBy]);
 
   const groups = GROUPS.map((g) => [g[0], g[1], g[2], g[3].filter((t) => !t[2] || perm[t[2]])]).filter((g) => g[3].length);
-  const cur = groups.find((g) => g[3].some(([k]) => k === tab)) || groups[0];
+  // the app admin (users & access) sits in the header, beside the account button
+  const cur = tab === 'users' ? ['', '', null, []] : groups.find((g) => g[3].some(([k]) => k === tab)) || groups[0];
   const unread = (D.messages || []).filter((m) => (perm.switchCenter ? !m.from_hq : m.from_hq) && !(D.reads || []).some((x) => x.message_id === m.id)).length;
   const lastTab = useMemo(() => ({}), []);
-  const goTab = (k) => { lastTab[groupOf(k)[0]] = k; setTab(k); window.scrollTo(0, 0); };
+  const goTab = (k) => { const g = GROUPS.find((x) => x[3].some(([t]) => t === k)); if (g) lastTab[g[0]] = k; setTab(k); window.scrollTo(0, 0); };
   const initials = (profile.full_name || profile.email || '?').trim()[0].toUpperCase();
 
   return (
@@ -245,7 +247,8 @@ function Main({ profile }) {
                 {R.centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
-            <button className="top-btn" onClick={() => setExporting({})} aria-label="Export a report"><Icon.download /><span className="desk-only">Export</span></button>
+            <button className="top-btn" onClick={() => setExporting({})} aria-label="Downloads and reports"><Icon.download /><span className="desk-only">Downloads</span></button>
+            {perm.users && <button className={`top-btn ${tab === 'users' ? 'on' : ''}`} onClick={() => goTab('users')} aria-label="App admin: users and access"><Icon.settings /><span className="desk-only">App admin</span></button>}
             <button className="avatar" onClick={() => setMenu(true)} aria-label="Account and settings">{initials}</button>
           </div>
         </div>
@@ -286,6 +289,7 @@ function Main({ profile }) {
             {tab === 'messages' && <Messages {...ctx} />}
             {tab === 'finance' && <Finance {...ctx} />}
             {tab === 'centers' && <Centers {...ctx} R={R} setCenter={(id) => { setCenterId(id); setWeek(null); goTab('home'); }} />}
+            {tab === 'roadmap' && !D.r4 && <div className="banner err">Linking program topics to the roadmap needs the release 4 SQL to be run in Supabase once.</div>}
             {['messages', 'finance'].includes(tab) && !D.r3 && <div className="banner err">This page needs the release 3 SQL to be run in Supabase once.</div>}
             {tab === 'roadmap' && <Roadmap {...ctx} />}
             {['plans', 'roadmap', 'calendar'].includes(tab) && !D.r2 && <div className="banner err">Plans and the roadmap need the release 2 SQL to be run in Supabase once.</div>}
@@ -323,6 +327,7 @@ function scopeToCenter(R, cid) {
     center: R.centers.find((c) => c.id === cid) || R.centers[0] || null,
     evals: (R.evals || []).filter(inC), meetings: (R.meetings || []).filter(inC), agenda: (R.agenda || []).filter(inC),
     plans, items: (R.items || []).filter((i) => planIds.has(i.plan_id)), plessons: (R.plessons || []).filter((x) => pid.has(x.person_id)),
+    lessonTopics: (R.lessonTopics || []).filter(inC),
     reconcile: (R.reconcile || []).filter(inC), assets: (R.assets || []).filter(inC), ledger: (R.ledger || []).filter(inC),
     messages: (R.messages || []).filter((m) => m.center_id == null || m.center_id === cid),
   };

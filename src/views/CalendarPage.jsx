@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS, ET_MONTHS_AM, toEthiopian, addDays, weekdayOf,
   WEEKDAYS, sundaysOf, semesterOf, SEMESTERS, semesterStart, semName } from '../lib/ethiopian';
-import { parseEvents, parseReport } from '../lib/report';
+import { parseEvents } from '../lib/report';
 import { Icon, Sheet } from './common';
 import CalendarMonth from './CalendarMonth';
 import Reconcile from './Reconcile';
+import TeachingPlan from './TeachingPlan';
+import { planMaps } from '../lib/teaching';
 
 export const EVENT_KINDS = ['Event', 'Retreat', 'Conference', 'Training', 'Outreach', 'Worship night', 'Holiday', 'Fellowship', 'HQ meeting', 'Other'];
 const span = (e) => [e.starts_on, e.ends_on && e.ends_on > e.starts_on ? e.ends_on : e.starts_on];
@@ -43,18 +45,15 @@ export default function CalendarPage(props) {
           <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>Teaching plan</button>
         </div>
       </div>
-      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <><Reconcile {...props} /><h2 className="section-h">Events</h2><Events {...props} /></> : <Plan {...props} />}
+      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <><Reconcile {...props} /><h2 className="section-h">Events</h2><Events {...props} /></> : <TeachingPlan {...props} />}
     </div>
   );
 }
 
 function usePlanFor(D) {
   return useMemo(() => {
-    const cid = D.center?.id || 1;
-    const m = new Map();
-    for (const r of D.plan) if (r.center_id == null) m.set(r.sunday, r);
-    for (const r of D.plan) if (r.center_id === cid) m.set(r.sunday, r);
-    return (s) => m.get(s);
+    const { hq, own } = planMaps(D.plan, D.center?.id || 1);
+    return (s) => own.get(s) || hq.get(s);
   }, [D.plan, D.center]);
 }
 
@@ -214,114 +213,3 @@ function PasteEvents({ year, cid, admin, others, ctx, onClose, onSaved, setError
   );
 }
 
-/* ── teaching plan vs what happened ─────────────────────────────── */
-function Plan({ D, latest, today, perm, progBy, reload, setError }) {
-  const [sem, setSem] = useState(semesterOf(today));
-  const [edit, setEdit] = useState(null);
-  const [paste, setPaste] = useState(false);
-  const planFor = usePlanFor(D);
-  const sundays = sundaysOf(sem);
-  const cid = D.center?.id || 1;
-  const rows = sundays.map((s) => {
-    const plan = planFor(s), act = progBy[s];
-    let status;
-    if (act?.kind === 'No meeting') status = ['No meeting', 'bad'];
-    else if (!plan) status = act?.kind ? ['No plan', ''] : s <= today ? ['Nothing recorded', ''] : ['', ''];
-    else if (!act?.kind) status = s <= today ? ['Not recorded', 'sun'] : ['Planned', 'lime'];
-    else status = same(plan.topic, act.topic) ? ['As planned', 'ok'] : ['Changed', 'sun'];
-    return { s, plan, act, status };
-  });
-  const planned = rows.filter((r) => r.plan && r.s <= today);
-  const asPlanned = planned.filter((r) => r.status[0] === 'As planned').length;
-  const semIdx = SEMESTERS.indexOf(sem);
-
-  async function savePlan(f) {
-    const row = { center_id: f.center_id, sunday: f.sunday, series: f.series || null, topic: f.topic || null, teacher: f.teacher || null, notes: f.notes || null };
-    const existing = D.plan.find((p) => p.sunday === f.sunday && (p.center_id ?? null) === (f.center_id ?? null));
-    const { error } = existing ? await supabase.from('teaching_plan').update(row).eq('id', existing.id) : await supabase.from('teaching_plan').insert(row);
-    if (error) return setError(`Not saved: ${error.message}`);
-    setEdit(null); reload();
-  }
-
-  return (
-    <>
-      <div className="month-bar">
-        <button className="arrow" disabled={semIdx <= 0} onClick={() => setSem(SEMESTERS[semIdx - 1])} aria-label="Previous semester"><Icon.left /></button>
-        <div className="current">
-          <span className="w-main">{semName(sem)}</span>
-          <span className="w-sub">{fmtGreg(semesterStart(sem))} · {sundays.length} Sundays · {planned.length ? `${asPlanned} of ${planned.length} planned Sundays taught as planned` : 'no plan entered yet'}</span>
-        </div>
-        <button className="arrow" disabled={semIdx >= SEMESTERS.length - 1} onClick={() => setSem(SEMESTERS[semIdx + 1])} aria-label="Next semester"><Icon.right /></button>
-      </div>
-      {(perm.manage || perm.switchCenter) && <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a plan</button></div>}
-      <section className="card flush">
-        <div style={{ overflowX: 'auto' }}>
-          <table className="gtable left plan-table">
-            <thead><tr><th>Sunday</th><th>HQ / center plan</th><th>What happened</th><th className="desk-only" /></tr></thead>
-            <tbody>
-              {rows.map(({ s, plan, act, status }) => (
-                <tr key={s} className={s === latest ? 'sel' : ''} onClick={() => (perm.manage || perm.switchCenter) && setEdit({ sunday: s, center_id: plan ? plan.center_id ?? null : perm.switchCenter ? null : cid, series: plan?.series || '', topic: plan?.topic || '', teacher: plan?.teacher || '', notes: plan?.notes || '' })}>
-                  <td style={{ whiteSpace: 'nowrap' }}><b>{etLabel(s)}</b><div className="tiny muted">{fmtGreg(s)}</div>{status[0] && <div className="mob-only"><span className={`tag ${status[1]}`}>{status[0]}</span></div>}</td>
-                  <td className="am">{plan ? <>{plan.series && <span className="tag">{plan.series}</span>} {plan.topic}<div className="tiny muted">{plan.teacher}{plan.center_id == null ? ' · HQ' : ''}</div></> : <span className="faint">—</span>}</td>
-                  <td className="am">{act?.kind ? <>{act.kind === 'Teaching' ? '' : <span className="tag">{act.kind}</span>} {act.topic}<div className="tiny muted">{act.minister}</div></> : <span className="faint">—</span>}</td>
-                  <td className="desk-only">{status[0] && <span className={`tag ${status[1]}`}>{status[0]}</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <p className="muted tiny">What happened comes from the programs recorded on the Attendance page. {perm.manage ? 'Tap a row to set its plan.' : ''}</p>
-      {edit && (
-        <Sheet title={`Plan · ${etLabel(edit.sunday, true)}`} onClose={() => setEdit(null)}>
-          <form className="form" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); savePlan({ ...edit, ...f, center_id: f.scope === 'all' ? null : cid }); }}>
-            <div className="row2">
-              <label>Series<input name="series" defaultValue={edit.series} placeholder="e.g. ተሃድሶ" /></label>
-              <label>Teacher<input name="teacher" defaultValue={edit.teacher} /></label>
-            </div>
-            <label>Topic<input name="topic" defaultValue={edit.topic} /></label>
-            <label>Notes<textarea name="notes" rows={2} defaultValue={edit.notes} /></label>
-            <label>Plan for<select name="scope" defaultValue={edit.center_id == null ? 'all' : 'center'} disabled={!perm.switchCenter}><option value="all">All centers (HQ plan)</option><option value="center">This center only</option></select></label>
-            <button className="btn lime wide">Save plan</button>
-          </form>
-        </Sheet>
-      )}
-      {paste && <PastePlan year={toEthiopian(semesterStart(sem)).year} admin={perm.switchCenter} cid={cid} D={D} onClose={() => setPaste(false)} onSaved={() => { setPaste(false); reload(); }} setError={setError} />}
-    </>
-  );
-}
-const norm = (t) => (t || '').toLowerCase().replace(/[\s.,:;–-]+/g, '');
-const same = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.includes(y) || y.includes(x)); };
-
-function PastePlan({ year, admin, cid, D, onClose, onSaved, setError }) {
-  const [y, setY] = useState(year);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const { rows, skipped } = parseReport(text, Number(y));
-  async function save() {
-    setBusy(true);
-    const center_id = admin ? null : cid;
-    for (const r of rows) {
-      const row = { center_id, sunday: r.sunday, topic: r.topic || null, teacher: r.minister || null, series: r.kind !== 'Teaching' && r.kind !== 'Special program' ? r.kind : null };
-      const ex = D.plan.find((p) => p.sunday === r.sunday && (p.center_id ?? null) === center_id);
-      const { error } = ex ? await supabase.from('teaching_plan').update(row).eq('id', ex.id) : await supabase.from('teaching_plan').insert(row);
-      if (error) { setBusy(false); return setError(`Not saved: ${error.message}`); }
-    }
-    setBusy(false); onSaved();
-  }
-  return (
-    <Sheet title="Paste a teaching plan" onClose={onClose} wide>
-      <div className="form">
-        <p className="small muted">Same format as the monthly report: <b>month day - teacher - program - topic</b>. {admin ? 'Saved as the HQ plan for all centers.' : 'Saved for this center.'}</p>
-        <label>Ethiopian year<input inputMode="numeric" value={y} onChange={(e) => setY(e.target.value)} style={{ maxWidth: 120 }} /></label>
-        <label>Plan<textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={'ጥቅምት 08 - ፓ/ር ፍፄ - ትምህርት - ትንቢተ ሚልክያስ'} /></label>
-        {rows.length > 0 && (
-          <table className="gtable left"><thead><tr><th>Sunday</th><th>Topic</th><th>Teacher</th></tr></thead>
-            <tbody>{rows.map((r) => <tr key={r.sunday}><td>{etLabel(r.sunday, true)}{!r.isSunday && <span className="tag bad">not a Sunday</span>}</td><td className="am">{r.topic || r.kind}</td><td className="am">{r.minister || '–'}</td></tr>)}</tbody></table>
-        )}
-        {skipped.length > 0 && text && <p className="tiny muted">Skipped: {skipped.join(' · ')}</p>}
-        <button className="btn lime" disabled={!rows.length || busy} onClick={save}>{busy ? 'Saving…' : `Save ${rows.length || ''} Sunday${rows.length === 1 ? '' : 's'}`}</button>
-      </div>
-    </Sheet>
-  );
-}

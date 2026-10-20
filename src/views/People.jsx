@@ -9,6 +9,8 @@ import { Icon, CAT_COLOR, PersonInput } from './common';
 import { NewPersonSheet } from './Register';
 import { ProfileForm } from './Profiles';
 import GroupSheet from './GroupSheet';
+import { firstTeaching } from '../lib/teaching';
+import { Sheet } from './common';
 
 const FILTERS = [
   ['All', 'Everyone', () => true],
@@ -35,6 +37,7 @@ export default function People({ D, idx, latest, perm, openPerson, createRoll, r
   const [panel, setPanel] = useState(null);
   const [group, setGroup] = useState(null);
   const [saved, setSaved] = useState('');
+  const [fill, setFill] = useState(false);
   const sem = semesterOf(todayIso());
   const leaders = D.people.filter((p) => ['Leader', 'Senior Leader'].includes(p.category) && !p.archived);
   const test = FILTERS.find((f) => f[0] === filter)[2];
@@ -83,7 +86,10 @@ export default function People({ D, idx, latest, perm, openPerson, createRoll, r
           <h1 className="page-title">People</h1>
           <p className="page-sub">Everyone and their profile, like a spreadsheet: scroll sideways, the name stays put. Changes save when you leave a box. Responsible persons are for {semName(sem)}.</p>
         </div>
-        {perm.mark && <button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Register someone</button>}
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          {perm.mark && <button className="btn ghost" onClick={() => setFill(true)}><Icon.book width="18" height="18" /> Fill first teaching</button>}
+          {perm.mark && <button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Register someone</button>}
+        </div>
       </div>
       <div className="toolbar row">
         <label className="search" style={{ flex: 1 }}>
@@ -136,6 +142,7 @@ export default function People({ D, idx, latest, perm, openPerson, createRoll, r
       <p className="muted tiny">{list.length} shown · numbers count this list from 1. Group changes and responsible persons keep their history (open a person’s card to see it).</p>
       {saved && <div className="toast">{saved}</div>}
 
+      {fill && <FirstTeachingSheet D={D} idx={idx} onClose={() => setFill(false)} onDone={() => { setFill(false); reload(); }} setError={setError} />}
       {adding && <NewPersonSheet D={D} defaultSunday={latest} createRoll={createRoll} setError={setError} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {panel && <ProfileForm key={panel.id} person={panel} people={D.people} canEdit={perm.mark} setError={setError}
         onOpenCard={() => { const id = panel.id; setPanel(null); openPerson(id); }} onClose={() => setPanel(null)} onSaved={() => { setPanel(null); reload(); }} />}
@@ -152,5 +159,50 @@ function InviterCell({ p, people, disabled, onSave }) {
     <span onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setTimeout(() => onSave(v.trim(), id || (v.trim() ? bestMatch(v, people.filter((x) => x.id !== p.id))?.id : null)), 160); }} className={`inv ${linked ? 'linked' : ''}`} title={linked ? `Linked to ${linked.full_name || linked.name}` : ''}>
       <PersonInput value={v} people={people.filter((x) => x.id !== p.id)} disabled={disabled} onChange={(t, pid) => { setV(t); setId(pid); }} />
     </span>
+  );
+}
+
+/* first teaching: from the Sunday each person joined, the first Sunday they were present that had a teaching */
+function FirstTeachingSheet({ D, idx, onClose, onDone, setError }) {
+  const [replace, setReplace] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const all = useMemo(() => D.people.filter((p) => !p.archived).map((p) => ({ p, ft: firstTeaching(p, D, idx) })), [D, idx]);
+  const found = all.filter((x) => x.ft?.topic);
+  const differs = (x) => (x.p.start_teaching || '').trim() && (x.p.start_teaching || '').trim() !== x.ft.topic;
+  const [off, setOff] = useState(() => new Set());
+  const todo = found.filter((x) => !off.has(x.p.id) && (!(x.p.start_teaching || '').trim() || (replace && differs(x)) || (!differs(x) && !x.p.start_teaching_on)));
+  const unknown = all.filter((x) => x.ft?.unknown).length, none = all.filter((x) => x.ft?.none).length;
+  async function save() {
+    setBusy(true);
+    for (const { p, ft } of todo) {
+      const keep = (p.start_teaching || '').trim() && !(replace && differs({ p, ft }));
+      const { error } = await supabase.from('people').update(keep ? { start_teaching_on: ft.sunday } : { start_teaching: ft.topic, start_teaching_on: ft.sunday }).eq('id', p.id);
+      if (error) { setBusy(false); return setError(`Not saved (${p.name}): ${error.message}`); }
+    }
+    setBusy(false); onDone();
+  }
+  return (
+    <Sheet title="Fill first teaching" onClose={onClose} wide>
+      <div className="form">
+        <p className="small muted" style={{ margin: 0 }}>From the Sunday each person joined, this goes forward to the first Sunday they were present that had a <b>teaching</b> (special programs, discussions, prayer and worship nights are skipped), using the program report and attendance.</p>
+        <div className="glance"><div><b>{found.length}</b><span>found</span></div><div><b>{unknown}</b><span>joined before the program report – fill by hand</span></div><div><b>{none}</b><span>no teaching attended yet</span></div></div>
+        <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Also replace ones already typed that are different</label>
+        <div style={{ overflowX: 'auto', maxHeight: 380 }}>
+          <table className="gtable left"><thead><tr><th /><th>Name</th><th>Joined</th><th>First teaching found</th><th>Now</th></tr></thead>
+            <tbody>{found.map((x) => {
+              const will = todo.includes(x);
+              return (
+                <tr key={x.p.id} className={will ? '' : 'skipped'}>
+                  <td><input type="checkbox" checked={!off.has(x.p.id)} onChange={() => setOff((o) => { const n = new Set(o); n.has(x.p.id) ? n.delete(x.p.id) : n.add(x.p.id); return n; })} aria-label={x.p.name} /></td>
+                  <td>{x.p.name}</td><td className="small">{etLabel(x.ft.joined, true)}</td>
+                  <td className="am">{x.ft.topic}<div className="tiny muted">{etLabel(x.ft.sunday, true)}{x.ft.minister ? ` · ${x.ft.minister}` : ''}</div></td>
+                  <td className="am small">{x.p.start_teaching || <span className="faint">empty</span>}{differs(x) && <span className="tag sun" style={{ marginLeft: 4 }}>different</span>}</td>
+                </tr>
+              );
+            })}</tbody></table>
+        </div>
+        <button className="btn lime" disabled={!todo.length || busy} onClick={save}>{busy ? 'Saving…' : `Save ${todo.length} first teaching${todo.length === 1 ? '' : 's'}`}</button>
+      </div>
+    </Sheet>
   );
 }

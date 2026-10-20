@@ -14,7 +14,7 @@ function Tip({ x, y, w, children }) {
 const labelEvery = (n, iw) => Math.max(1, Math.ceil(n / Math.max(1, Math.floor(iw / 48))));
 
 /* Stacked bars – people present per Sunday by group. weeks: [{sunday, values:{key:n}, note}] */
-export function StackedBars({ weeks, keys, labels, hidden, selected, onSelect, height = 240 }) {
+export function StackedBars({ weeks, keys, labels, hidden, selected, onSelect, height = 240, colors = CAT_COLOR }) {
   const [ref, w] = useWidth();
   const [hover, setHover] = useState(null);
   const vis = keys.filter((k) => !hidden.has(k));
@@ -42,7 +42,7 @@ export function StackedBars({ weeks, keys, labels, hidden, selected, onSelect, h
                 if (!v) return null;
                 const y0 = y(acc), y1 = y(acc + v);
                 acc += v;
-                return <rect key={k} x={cx - bw / 2} y={y1 + 1} width={bw} height={Math.max(y0 - y1 - 2, 1)} rx="3" fill={CAT_COLOR[k]} />;
+                return <rect key={k} x={cx - bw / 2} y={y1 + 1} width={bw} height={Math.max(y0 - y1 - 2, 1)} rx="3" fill={colors[k]} />;
               })}
               {weeks.length <= 26 && <text x={cx} y={y(acc) - 6} textAnchor="middle" fontSize="10.5" fontWeight="800" fill="var(--text)">{acc || ''}</text>}
               {isSel && <rect x={cx - bw / 2 - 4} y={padT - 8} width={bw + 8} height={ih + 12} rx="7" fill="none" stroke="var(--ink)" strokeWidth="1.5" strokeDasharray="3 3" />}
@@ -58,7 +58,7 @@ export function StackedBars({ weeks, keys, labels, hidden, selected, onSelect, h
           <div className="tip-head">{etLabel(weeks[hover].sunday, true)}</div>
           {weeks[hover].note && <div className="tip-sub">{weeks[hover].note}</div>}
           {[...vis].reverse().map((k) => (
-            <div className="tip-row" key={k}><span><i className="dot" style={{ background: CAT_COLOR[k] }} />{labels[k]}</span><b>{weeks[hover].values[k] || 0}</b></div>
+            <div className="tip-row" key={k}><span><i className="dot" style={{ background: colors[k] }} />{labels[k]}</span><b>{weeks[hover].values[k] || 0}</b></div>
           ))}
           <div className="tip-row tip-total"><span>Total present</span><b>{totals[hover]}</b></div>
         </Tip>

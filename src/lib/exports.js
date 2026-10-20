@@ -31,7 +31,7 @@ function sundayStats(ctx, s, cats) {
 }
 const held = (ctx, sundays) => sundays.filter((s) => ctx.idx.heldSet.has(s));
 
-function summaryTable(ctx, sundays, cats) {
+export function summaryTable(ctx, sundays, cats) {
   const head = ['Sunday', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Leaders & members rate', ...cats.map(([, l]) => l)];
   const body = sundays.filter((s) => ctx.idx.heldSet.has(s) || ctx.progBy[s]).map((s) => {
     const p = ctx.progBy[s] || {};
@@ -43,7 +43,7 @@ function summaryTable(ctx, sundays, cats) {
 }
 
 /* person × Sunday grid with a heading row per group */
-function gridTable(ctx, sundays, cats) {
+export function gridTable(ctx, sundays, cats) {
   const hs = held(ctx, sundays);
   const last = hs[hs.length - 1];
   const body = [];
@@ -251,3 +251,30 @@ export function stayText(p) {
 }
 export const notesWithoutStay = (n) => (n || '').replace(STAY_RE, '').replace(/^\s*[;\n]\s*|\s*[;\n]\s*$/g, '').trim();
 export const stayNote = (n) => (n || '').match(STAY_RE)?.[0] || '';
+
+/* ── Excel import helpers ──────────────────────────────────────── */
+/* first sheet as rows of cells; dates come back as Date objects */
+export async function readSheet(file) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+}
+/* finds the header row (the first row containing `key`) and returns objects keyed by the header's first word(s) */
+export function rowsUnder(aoa, keys) {
+  const hi = aoa.findIndex((r) => r.some((c) => keys.some((k) => String(c).toLowerCase().startsWith(k))));
+  if (hi < 0) return { head: [], rows: [] };
+  const head = aoa[hi].map((c) => String(c).trim());
+  const rows = aoa.slice(hi + 1).filter((r) => r.some((c) => String(c).trim() !== '')).map((r, i) => ({ line: hi + i + 2, cells: r }));
+  return { head, rows };
+}
+export const col = (head, ...starts) => head.findIndex((h) => starts.some((s) => h.toLowerCase().startsWith(s)));
+/* a template: an instructions line, the header, example / prefilled rows */
+export async function downloadTemplate(file, sheetName, help, head, rows, widths) {
+  const XLSX = await import('xlsx');
+  const ws = XLSX.utils.aoa_to_sheet([[help], head, ...rows]);
+  ws['!cols'] = (widths || head.map(() => 22)).map((wch) => ({ wch }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, `${file}.xlsx`);
+}

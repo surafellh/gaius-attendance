@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { etLabel, fmtGreg, semesterOf, semName, SEMESTERS, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, monthRange, addDays } from '../lib/ethiopian';
+import { etLabel, fmtGreg, semesterOf, semName, SEMESTERS, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, ET_MONTHS_AM, monthRange, addDays, semNo, semYear, semKey, WEEKDAYS, weekdayOf } from '../lib/ethiopian';
+import { parseAnyDate, parseMonths } from '../lib/teaching';
 import { deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen, effStatus, needsReason, isPostponed } from '../lib/plans';
-import { toExcel, toPdf, tableText } from '../lib/exports';
+import { toExcel, toPdf, tableText, readSheet, rowsUnder, col, downloadTemplate } from '../lib/exports';
 import { Sheet, Icon } from './common';
 
 export default function PlansPage(props) {
   const { D, today, perm } = props;
   const [tab, setTab] = useState('plans');
   const [sem, setSem] = useState(semesterOf(today));
-  const sems = SEMESTERS.filter((s) => semesterStart(s) <= addDays(today, 200)).reverse();
+  const sems = SEMESTERS.filter((s) => semesterStart(s) <= addDays(today, 400)).reverse();
   return (
     <div className="page">
       <div className="page-head">
@@ -36,6 +37,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
   const [open, setOpen] = useState(null);
   const [item, setItem] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const items = useMemo(() => semesterItems(D, sem), [D, sem]);
   const plans = D.plans.filter((p) => p.semester === sem);
   const byDept = D.departments.map((d) => ({ d, plans: plans.filter((p) => p.department_id === d.id) })).filter((x) => x.plans.length);
@@ -45,7 +47,12 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
   };
   return (
     <>
-      {perm.mark && <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Add a plan</button></div>}
+      <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <button className="btn ghost" onClick={() => toExcel(plansList(D, sem))}><Icon.download width="18" height="18" /> Download plans</button>
+        {perm.mark && <button className="btn ghost" onClick={() => setImporting(true)}><Icon.grid width="18" height="18" /> Import from Excel</button>}
+        {perm.mark && <button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Add a plan</button>}
+      </div>
+      {plans.length === 0 && <div className="card empty">No plans for {semName(sem)} yet.{perm.mark ? ' Add them one by one, or fill the Excel template and import it.' : ''}</div>}
       <div className="dept-plans">
         {byDept.map(({ d, plans: ps }) => {
           const its = items.filter((i) => i.plan.department_id === d.id);
@@ -64,7 +71,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
                   return (
                     <li key={p.id}>
                       <button className="plan-row" onClick={() => setOpen(p)}>
-                        <span className="plan-title am">{p.title}</span>
+                        <span className="plan-title am">{p.title}{perm.mark && <span className="edit-hint" aria-hidden="true"> ✎</span>}</span>
                         <span className="plan-meta">{p.timing_note || KIND_LABEL[pi[0]?.due_kind]}{Number(p.budget) ? ` · ${birr(p.budget)}` : ''}{pi.some((i) => needsReason(i, today)) && <span className="tag bad" style={{ marginLeft: 6 }}>reason needed</span>}{pi.some(isPostponed) && <span className="tag sun" style={{ marginLeft: 6 }}>postponed</span>}</span>
                       </button>
                       <span className="item-dots">
@@ -89,6 +96,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
       {open && <PlanSheet plan={open} D={D} today={today} perm={perm} onClose={() => setOpen(null)} onItem={(i) => setItem(i)} reload={reload} setError={setError} />}
       {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
       {adding && <NewPlanSheet D={D} sem={sem} onClose={() => setAdding(false)} reload={reload} setError={setError} />}
+      {importing && <ImportPlansSheet D={D} sem={sem} onClose={() => setImporting(false)} reload={reload} setError={setError} />}
     </>
   );
 }
@@ -102,7 +110,8 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
   const [note, setNote] = useState(item.note || '');
   const [approvedBy, setApprovedBy] = useState(item.approved_by || '');
   const [busy, setBusy] = useState(false);
-  const moved = due !== item.due;
+  const [fix, setFix] = useState(false); // a typing correction, not a postponement
+  const moved = due !== item.due && !fix;
   const today = new Date().toISOString().slice(0, 10);
   const lapsed = item.status === 'planned' && effStatus(item, today) === 'not_done';
   async function save() {
@@ -136,6 +145,7 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
             <button type="button" className="btn ghost small" disabled={!perm.mark} onClick={() => setDue(nextMonth(due))}>+1 month</button>
           </span>
         </label>
+        {due !== item.due && <label className="check"><input type="checkbox" checked={fix} onChange={(e) => setFix(e.target.checked)} /> The date was entered wrong – this is a correction, not a postponement</label>}
         {moved && <label>Postponing approved by<input value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} placeholder="e.g. leaders’ meeting Tikimt 11, center leader" /></label>}
         <div className="row2">
           <label>Budget for this item (birr)<input inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!perm.mark} /></label>
@@ -155,7 +165,7 @@ function PlanSheet({ plan, D, today, perm, onClose, onItem, reload, setError }) 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   async function run(q) { const { error } = await q; if (error) setError(`Not saved: ${error.message}`); else reload(); }
   return (
-    <Sheet title="Plan" onClose={onClose} wide>
+    <Sheet title={perm.mark ? "Edit plan" : "Plan"} onClose={onClose} wide>
       <div className="form">
         <label>Plan<input value={f.title} onChange={set('title')} disabled={!perm.mark} /></label>
         <label>Details<textarea rows={2} value={f.details} onChange={set('details')} disabled={!perm.mark} /></label>
@@ -171,14 +181,15 @@ function PlanSheet({ plan, D, today, perm, onClose, onItem, reload, setError }) 
           {items.map((i) => (
             <li key={i.id}>
               <button className="link" style={{ padding: 0, textAlign: 'left' }} onClick={() => onItem(i)}>{itemWhen(i)}{i.label ? ` · ${i.label}` : ''}</button>
-              <span><span className={`tag ${STATUS[i.status][1]}`}>{STATUS[i.status][0]}</span>{Number(i.budget) ? <span className="muted"> · {birr(i.budget)}</span> : null}</span>
+              <span><span className={`tag ${STATUS[i.status][1]}`}>{STATUS[i.status][0]}</span>{Number(i.budget) ? <span className="muted"> · {birr(i.budget)}</span> : null}
+                {perm.mark && <button className="link small" style={{ marginLeft: 8 }} aria-label={`Remove ${itemWhen(i)}`} onClick={() => window.confirm(`Remove ${itemWhen(i)} from this plan?`) && run(supabase.from('plan_items').delete().eq('id', i.id))}>Remove</button>}</span>
             </li>
           ))}
         </ul>
         {perm.mark && (
           <div className="row" style={{ gap: 8 }}>
             <input type="date" value={newDue} onChange={(e) => setNewDue(e.target.value)} style={{ flex: 1 }} />
-            <button className="btn ghost small" disabled={!newDue} onClick={() => { run(supabase.from('plan_items').insert({ plan_id: plan.id, center_id: plan.center_id, due: newDue, due_kind: 'day' })); setNewDue(''); }}>Add a date</button>
+            <button className="btn ghost small" disabled={!newDue} onClick={() => { run(supabase.from('plan_items').insert({ plan_id: plan.id, center_id: plan.center_id, due: newDue, due_kind: 'day', status: 'planned' })); setNewDue(''); }}>Add a date</button>
             <button className="btn danger small" onClick={() => window.confirm('Delete this plan and all its dates?') && run(supabase.from('plans').delete().eq('id', plan.id)).then(onClose)}>Delete plan</button>
           </div>
         )}
@@ -187,46 +198,168 @@ function PlanSheet({ plan, D, today, perm, onClose, onItem, reload, setError }) 
   );
 }
 
-function NewPlanSheet({ D, sem, onClose, reload, setError }) {
+/* create a plan and its dates; f: {department_id, title, details, budget, budget_note, kind, dates[], months[], prepared_by} */
+export async function createPlan(D, sem, f) {
+  const y = toEthiopian(semesterStart(sem)).year;
+  let due = [];
+  if (f.kind === 'day') due = f.dates.filter(Boolean).map((d) => [d, 'day']);
+  if (f.kind === 'month') due = f.months.map((m) => [monthRange({ year: y, month: Number(m) })[1], 'month']);
+  if (f.kind === 'week') { for (let d = f.dates.find(Boolean) || semesterStart(sem); d <= semesterEnd(sem); d = addDays(d, 7)) due.push([d, 'week']); }
+  if (f.kind === 'period') due = [[semesterEnd(sem), 'period']];
+  if (!String(f.title || '').trim() || !due.length) throw new Error('Add a title and at least one date or month.');
+  const budget = Number(f.budget) || 0;
+  const { data, error } = await supabase.from('plans').insert({ center_id: D.center?.id || 1, department_id: Number(f.department_id), semester: sem, title: f.title.trim(), details: f.details || null, budget, budget_note: f.budget_note || null,
+    prepared_by: f.prepared_by || null, timing_note: f.timing_note || null, timing: { day: 'date', week: 'weekly', month: 'monthly', period: 'within' }[f.kind], sort: 1000 }).select().single();
+  if (error) throw error;
+  const per = Math.round((budget / due.length) * 100) / 100;
+  const { error: e2 } = await supabase.from('plan_items').insert(due.map(([d, k]) => ({ plan_id: data.id, center_id: data.center_id, due: d, due_kind: k, budget: per, status: 'planned' })));
+  if (e2) throw e2;
+  return data;
+}
+
+function SemesterPick({ no, year, setNo, setYear }) {
+  return (
+    <div className="row2">
+      <label>Semester<select value={no} onChange={(e) => setNo(Number(e.target.value))}><option value={1}>Semester 1 (Meskerem – Yekatit)</option><option value={2}>Semester 2 (Megabit – Pagume)</option></select></label>
+      <label>Ethiopian year<input inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value)} /></label>
+    </div>
+  );
+}
+
+function NewPlanSheet({ D, sem: sem0, onClose, reload, setError }) {
+  const [no, setNo] = useState(semNo(sem0));
+  const [year, setYear] = useState(semYear(sem0));
+  const sem = semKey(no, Number(year) || semYear(sem0));
   const [f, setF] = useState({ department_id: D.departments[0]?.id, title: '', details: '', budget: '', budget_note: '', kind: 'day', dates: [''], months: [] });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const semMonths = [0, 1, 2, 3, 4, 5].map((i) => toEthiopian(semesterStart(sem)).month + i).filter((m) => m <= 12);
-  const y = toEthiopian(semesterStart(sem)).year;
+  const [busy, setBusy] = useState(false);
   async function save(e) {
     e.preventDefault();
-    let due = [];
-    if (f.kind === 'day') due = f.dates.filter(Boolean).map((d) => [d, 'day']);
-    if (f.kind === 'month') due = f.months.map((m) => [monthRange({ year: y, month: Number(m) })[1], 'month']);
-    if (f.kind === 'week') { for (let d = f.dates[0] || semesterStart(sem); d <= semesterEnd(sem); d = addDays(d, 7)) due.push([d, 'week']); }
-    if (f.kind === 'period') due = [[semesterEnd(sem), 'period']];
-    if (!f.title.trim() || !due.length) return setError('Add a title and at least one date or month.');
-    const budget = Number(f.budget) || 0;
-    const { data, error } = await supabase.from('plans').insert({ center_id: D.center?.id || 1, department_id: Number(f.department_id), semester: sem, title: f.title.trim(), details: f.details || null, budget, budget_note: f.budget_note || null,
-      timing: { day: 'date', week: 'weekly', month: 'monthly', period: 'within' }[f.kind], sort: 1000 }).select().single();
-    if (error) return setError(`Not saved: ${error.message}`);
-    const per = Math.round((budget / due.length) * 100) / 100;
-    const { error: e2 } = await supabase.from('plan_items').insert(due.map(([d, k]) => ({ plan_id: data.id, center_id: data.center_id, due: d, due_kind: k, budget: per })));
-    if (e2) return setError(`Dates not saved: ${e2.message}`);
-    reload(); onClose();
+    setBusy(true);
+    try { await createPlan(D, sem, f); reload(); onClose(); } catch (err) { setError(`Not saved: ${err.message}`); }
+    setBusy(false);
   }
+  const outside = f.dates.some((d) => d && (d < semesterStart(sem) || d > semesterEnd(sem)));
   return (
     <Sheet title={`New plan · ${semName(sem)}`} onClose={onClose}>
       <form className="form" onSubmit={save}>
+        <SemesterPick no={no} year={year} setNo={setNo} setYear={setYear} />
         <label>Department<select value={f.department_id} onChange={set('department_id')}>{D.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <label>Plan<input value={f.title} onChange={set('title')} required /></label>
         <label>Details<textarea rows={2} value={f.details} onChange={set('details')} /></label>
         <div className="seg">{[['day', 'On dates'], ['week', 'Every week'], ['month', 'In months'], ['period', 'Any time']].map(([k, l]) => <button type="button" key={k} className={f.kind === k ? 'on' : ''} onClick={() => setF({ ...f, kind: k })}>{l}</button>)}</div>
         {(f.kind === 'day' || f.kind === 'week') && f.dates.map((d, i) => (
-          <label key={i}>{f.kind === 'week' ? 'First week' : `Date ${i + 1}`} {d && <span className="faint">{etLabel(d, true)}</span>}<input type="date" value={d} onChange={(e) => { const n = [...f.dates]; n[i] = e.target.value; setF({ ...f, dates: n }); }} /></label>
+          <label key={i}>{f.kind === 'week' ? 'First week' : `Date ${i + 1}`} {d && <span className="faint">{WEEKDAYS[weekdayOf(d)]}, {etLabel(d, true)}</span>}<input type="date" value={d} onChange={(e) => { const n = [...f.dates]; n[i] = e.target.value; setF({ ...f, dates: n }); }} /></label>
         ))}
         {f.kind === 'day' && <button type="button" className="link small" onClick={() => setF({ ...f, dates: [...f.dates, ''] })}>+ another date</button>}
+        {outside && <p className="banner warn" style={{ margin: 0 }}>A date is outside {semName(sem)}.</p>}
         {f.kind === 'month' && <div className="chips">{semMonths.map((m) => <label key={m} className="check"><input type="checkbox" checked={f.months.includes(m)} onChange={(e) => setF({ ...f, months: e.target.checked ? [...f.months, m] : f.months.filter((x) => x !== m) })} /> {ET_MONTHS[m]}</label>)}</div>}
         <div className="row2">
           <label>Budget (birr, total)<input inputMode="numeric" value={f.budget} onChange={set('budget')} placeholder="– if none" /></label>
           <label>Budget detail<input value={f.budget_note} onChange={set('budget_note')} /></label>
         </div>
-        <button className="btn lime wide">Add plan</button>
+        <button className="btn lime wide" disabled={busy}>{busy ? 'Saving…' : 'Add plan'}</button>
       </form>
+    </Sheet>
+  );
+}
+
+/* ── Excel: the semester's plans in the same layout as the import template ─── */
+const PLAN_HEAD = ['Department', 'Activity', 'Details', 'When', 'Dates or months', 'Budget (birr)', 'Budget detail', 'Prepared by'];
+const WHEN = [['day', 'On dates'], ['week', 'Every week'], ['month', 'In months'], ['period', 'Any time']];
+const dateCell = (d) => { const e = toEthiopian(d); return `${ET_MONTHS_AM[e.month]} ${String(e.day).padStart(2, '0')}`; };
+export function plansList(D, sem) {
+  const plans = D.plans.filter((p) => p.semester === sem);
+  const body = plans.map((p) => {
+    const its = D.items.filter((i) => i.plan_id === p.id).sort((a, b) => a.due.localeCompare(b.due));
+    const k = its[0]?.due_kind || 'day';
+    const when = k === 'month' ? its.map((i) => ET_MONTHS[toEthiopian(i.due).month]).join(', ') : k === 'week' ? (its[0] ? dateCell(its[0].due) : '') : k === 'period' ? '' : its.map((i) => dateCell(i.due)).join(', ');
+    return [deptName(D, p.department_id), p.title, p.details || '', WHEN.find((w) => w[0] === k)[1], when, Number(p.budget) || '', p.budget_note || '', p.prepared_by || ''];
+  });
+  return { title: `Gaius ${D.center?.name || ''} – plans, ${semName(sem)}`, file: `Gaius_${D.center?.name || ''}_plans_${sem.replace(' ', '_')}`, sub: `${plans.length} plans`, sheets: [{ name: 'Plans', head: PLAN_HEAD, body }] };
+}
+
+function ImportPlansSheet({ D, sem: sem0, onClose, reload, setError }) {
+  const [no, setNo] = useState(semNo(sem0));
+  const [year, setYear] = useState(semYear(sem0));
+  const sem = semKey(no, Number(year) || semYear(sem0));
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(0);
+  const findDept = (v) => {
+    const t = String(v || '').trim().toLowerCase();
+    if (!t) return null;
+    return D.departments.find((d) => [d.name, d.name_am].some((n) => n && n.toLowerCase() === t))
+      || D.departments.find((d) => [d.name, d.name_am].some((n) => n && (n.toLowerCase().includes(t) || t.includes(n.toLowerCase()))));
+  };
+  async function template() {
+    await downloadTemplate(`Plan_template_${semName(sem).replace(/\W+/g, '_')}`, 'Plans',
+      `Plans · ${semName(sem)} · one activity per row. When: On dates / Every week / In months / Any time. Dates like ጥቅምት 15, ኅዳር 20 (or 2026-10-25); months like Tikimt, Hidar. Departments: ${D.departments.map((d) => d.name).join(', ')}`,
+      PLAN_HEAD, [[D.departments[0]?.name || 'Follow-up', 'Example – delete this row', 'What and why', 'On dates', 'ጥቅምት 15, ኅዳር 20', 1500, 'Transport and snacks', '']], [18, 34, 30, 12, 26, 12, 24, 16]);
+  }
+  async function readFile(file) {
+    try {
+      const { head, rows: list } = rowsUnder(await readSheet(file), ['department', 'ክፍል']);
+      const c = { d: col(head, 'department', 'ክፍል'), a: col(head, 'activity', 'plan', 'ተግባር'), de: col(head, 'detail'), w: col(head, 'when'), x: col(head, 'dates', 'date', 'month'), b: col(head, 'budget (', 'budget'), bd: col(head, 'budget detail'), p: col(head, 'prepared') };
+      if (c.d < 0 || c.a < 0) return setError('The sheet needs “Department” and “Activity” columns – use the template.');
+      const y = Number(year);
+      setRows(list.map(({ line, cells }) => {
+        const get = (i) => (i >= 0 ? cells[i] : '');
+        const title = String(get(c.a) || '').trim();
+        const dept = findDept(get(c.d));
+        const w = String(get(c.w) || '').toLowerCase();
+        const kind = /week|ሳምንት/.test(w) ? 'week' : /month|ወር/.test(w) ? 'month' : /any|period|ጊዜ/.test(w) ? 'period' : 'day';
+        const raw = get(c.x);
+        const parts = raw instanceof Date || typeof raw === 'number' ? [raw] : String(raw || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+        const dates = kind === 'day' || kind === 'week' ? parts.map((x) => parseAnyDate(x, y)) : [];
+        const months = kind === 'month' ? parseMonths(raw) : [];
+        const problems = [];
+        if (/example/i.test(title)) problems.push('example row');
+        if (!title) problems.push('no activity');
+        if (!dept) problems.push(`department “${get(c.d)}” not found`);
+        if (kind === 'day' && (!dates.length || dates.some((d) => !d))) problems.push('a date was not understood');
+        if (kind === 'month' && !months.length) problems.push('no months');
+        if (dates.some((d) => d && (d < semesterStart(sem) || d > semesterEnd(sem)))) problems.push('date outside the semester');
+        return { line, title, dept, kind, dates: dates.filter(Boolean), months, details: String(get(c.de) || ''), budget: Number(String(get(c.b) || '').replace(/[^\d.]/g, '')) || 0, budget_note: String(get(c.bd) || ''), prepared_by: String(get(c.p) || ''), problems, use: !problems.length };
+      }));
+    } catch (e) { setError(`Couldn’t read the file: ${e.message}`); }
+  }
+  async function save() {
+    setBusy(true);
+    let n = 0;
+    for (const r of rows.filter((x) => x.use)) {
+      try { await createPlan(D, sem, { department_id: r.dept.id, title: r.title, details: r.details, budget: r.budget, budget_note: r.budget_note, prepared_by: r.prepared_by, kind: r.kind, dates: r.dates, months: r.months }); n++; setDone(n); }
+      catch (e) { setError(`Row ${r.line} not saved: ${e.message}`); break; }
+    }
+    setBusy(false); reload(); if (n) onClose();
+  }
+  const usable = (rows || []).filter((r) => r.use).length;
+  return (
+    <Sheet title="Import plans from Excel" onClose={onClose} wide>
+      <div className="form">
+        <SemesterPick no={no} year={year} setNo={setNo} setYear={setYear} />
+        <p className="small muted" style={{ margin: 0 }}>{semName(sem)}: {etLabel(semesterStart(sem), true)} – {etLabel(semesterEnd(sem), true)}. Imported plans are added to the ones already there.</p>
+        <div className="import-box">
+          <button type="button" className="btn ghost" onClick={template}><Icon.download width="18" height="18" /> Download template</button>
+          <label className="btn lime file-btn"><Icon.grid width="18" height="18" /> Choose the filled Excel file<input type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && readFile(e.target.files[0])} /></label>
+        </div>
+        {rows && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="gtable left"><thead><tr><th /><th>Department</th><th>Activity</th><th>When</th><th>Budget</th></tr></thead>
+              <tbody>{rows.map((r, i) => (
+                <tr key={i} className={r.use ? '' : 'skipped'}>
+                  <td><input type="checkbox" checked={r.use} disabled={!r.dept || !r.title} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, use: e.target.checked } : x)))} aria-label={`Import row ${r.line}`} /></td>
+                  <td>{r.dept?.name || <span className="tag bad">?</span>}</td>
+                  <td className="am">{r.title}{r.problems.length > 0 && <div className="tiny" style={{ color: 'var(--absent)' }}>Row {r.line}: {r.problems.join(', ')}</div>}</td>
+                  <td className="small">{r.kind === 'month' ? r.months.map((m) => ET_MONTHS[m]).join(', ') : r.kind === 'period' ? 'Any time' : r.kind === 'week' ? `Weekly from ${r.dates[0] ? etLabel(r.dates[0]) : 'the start'}` : r.dates.map((d) => etLabel(d)).join(', ')}</td>
+                  <td>{r.budget ? birr(r.budget) : '–'}</td>
+                </tr>
+              ))}</tbody></table>
+          </div>
+        )}
+        <button className="btn lime" disabled={!usable || busy} onClick={save}>{busy ? `Saving ${done}/${usable}…` : `Import ${usable || ''} plan${usable === 1 ? '' : 's'}`}</button>
+      </div>
     </Sheet>
   );
 }

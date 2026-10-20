@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { planMaps } from '../lib/teaching';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, nextWeekday, daysBetween, addDays, WEEKDAYS, WEEKDAYS_AM, semesterOf, semesterStart, toEthiopian, monthRange, ET_MONTHS } from '../lib/ethiopian';
 import { personFacts, counts } from '../lib/stats';
@@ -39,8 +40,9 @@ export default function Meeting({ D, idx, latest, today, perm, personBy, progBy,
     for (const e of soon) out.push({ title: `Prepare: ${e.title} (${etLabel(e.starts_on)})`, details: e.location ? `At ${e.location}` : null });
     const nextSun = nextWeekday(0, addDays(today, 1));
     if (!progBy[nextSun]) {
-      const plan = D.plan.find((x) => x.sunday === nextSun);
-      out.push({ title: `Program for Sunday ${etLabel(nextSun)}`, details: plan ? `HQ plan: ${[plan.topic, plan.teacher].filter(Boolean).join(' – ')}` : 'No program or plan recorded yet' });
+      const pm = planMaps(D.plan, D.center?.id || 1);
+      const plan = pm.own.get(nextSun) || pm.hq.get(nextSun);
+      out.push({ title: `Program for Sunday ${etLabel(nextSun)}`, details: plan ? `${pm.own.has(nextSun) ? 'Our plan' : 'HQ plan'}: ${[plan.topic, plan.teacher].filter(Boolean).join(' – ')}` : 'No program or plan recorded yet' });
     }
     // last meeting of the Ethiopian month: budget request and the month's plan review
     const e = toEthiopian(m.next);
