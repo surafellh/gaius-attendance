@@ -7,13 +7,14 @@ import { Sheet, Icon, CAT_COLOR } from './common';
 const GROUPS = [
   ['Member', 'Members', (p) => p.category === 'Member'], ['Leader', 'Leaders', (p) => ['Leader', 'Senior Leader'].includes(p.category)],
   ['Informal', 'Informal members', (p) => ['Active Informal Member', 'Inactive Informal Member'].includes(p.category)],
-  ['New Comer', 'New comers', (p) => p.category === 'New Comer'], ['All', 'Everyone', () => true],
+  ['New Comer', 'New comers', (p) => p.category === 'New Comer'],
 ];
 
 /* Teaching roadmap: who has taken which lesson, and what each person still needs */
 export default function Roadmap({ D, perm, openPerson, reload, setError }) {
-  const [group, setGroup] = useState('Member');
-  const [need, setNeed] = useState('');
+  const [groups, setGroups] = useState(['Member']);
+  const [need, setNeed] = useState('');           // "took:<id>" or "needs:<id>"
+  const flip = (k) => setGroups((g) => (g.includes(k) ? (g.length > 1 ? g.filter((x) => x !== k) : g) : [...g, k]));
   const [manage, setManage] = useState(false);
   const [busy, setBusy] = useState(null);
   const cid = D.center?.id || 1;
@@ -23,9 +24,9 @@ export default function Roadmap({ D, perm, openPerson, reload, setError }) {
     for (const x of D.plessons) m.set(`${x.person_id}|${x.lesson_id}`, x);
     return m;
   }, [D.plessons]);
-  const test = GROUPS.find((g) => g[0] === group)[2];
+  const test = (p) => GROUPS.some(([k, , t]) => groups.includes(k) && t(p));
   let people = D.people.filter((p) => !p.archived && test(p)).sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9));
-  if (need) people = people.filter((p) => !done.has(`${p.id}|${need}`));
+  if (need) { const [mode, id] = need.split(':'); people = people.filter((p) => (mode === 'took') === done.has(`${p.id}|${id}`)); }
   const countOf = (p) => lessons.filter((l) => done.has(`${p.id}|${l.id}`)).length;
   const complete = people.filter((p) => lessons.length && countOf(p) === lessons.length).length;
 
@@ -49,10 +50,14 @@ export default function Roadmap({ D, perm, openPerson, reload, setError }) {
       </div>
       <div className="banner">This is a starting list taken from the “first teaching” column. When HQ sends the roadmap, add its lessons in order under <b>Lessons</b>.</div>
       <div className="toolbar row" style={{ flexWrap: 'wrap' }}>
-        <div className="chips">{GROUPS.map(([k, l, t]) => <button key={k} className={`chipbtn ${group === k ? 'on' : ''}`} onClick={() => setGroup(k)}>{l} <span className="n">{D.people.filter((p) => !p.archived && t(p)).length}</span></button>)}</div>
-        <select className="small-select" value={need} onChange={(e) => setNeed(e.target.value)} aria-label="Still needs">
-          <option value="">Show everyone</option>
-          {lessons.map((l) => <option key={l.id} value={l.id}>Still needs: {l.name_am || l.name}</option>)}
+        <div className="chips">
+          {GROUPS.map(([k, l, t]) => <button key={k} aria-pressed={groups.includes(k)} className={`chipbtn ${groups.includes(k) ? 'on' : ''}`} onClick={() => flip(k)}>{groups.includes(k) ? '✓ ' : ''}{l} <span className="n">{D.people.filter((p) => !p.archived && t(p)).length}</span></button>)}
+          <button className="chipbtn" onClick={() => setGroups(GROUPS.map((g) => g[0]))}>Everyone</button>
+        </div>
+        <select className="small-select" value={need} onChange={(e) => setNeed(e.target.value)} aria-label="Filter by lesson">
+          <option value="">Any lesson</option>
+          <optgroup label="Took it">{lessons.map((l) => <option key={l.id} value={`took:${l.id}`}>Took: {l.name_am || l.name}</option>)}</optgroup>
+          <optgroup label="Still needs it">{lessons.map((l) => <option key={l.id} value={`needs:${l.id}`}>Still needs: {l.name_am || l.name}</option>)}</optgroup>
         </select>
       </div>
       <p className="small muted" style={{ margin: 0 }}>{people.length} people · {complete} have taken every lesson</p>
@@ -88,7 +93,7 @@ export default function Roadmap({ D, perm, openPerson, reload, setError }) {
           </tbody>
         </table>
       </div>
-      {manage && <LessonSheet D={D} lessons={D.lessons.filter((l) => l.center_id == null || l.center_id === cid)} cid={cid} admin={perm.admin} onClose={() => setManage(false)} reload={reload} setError={setError} />}
+      {manage && <LessonSheet D={D} lessons={D.lessons.filter((l) => l.center_id == null || l.center_id === cid)} cid={cid} admin={perm.switchCenter} onClose={() => setManage(false)} reload={reload} setError={setError} />}
     </div>
   );
 }

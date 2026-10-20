@@ -5,6 +5,7 @@ import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS
 import { parseEvents, parseReport } from '../lib/report';
 import { Icon, Sheet } from './common';
 import CalendarMonth from './CalendarMonth';
+import Reconcile from './Reconcile';
 
 export const EVENT_KINDS = ['Event', 'Retreat', 'Conference', 'Training', 'Outreach', 'Worship night', 'Holiday', 'Fellowship', 'HQ meeting', 'Other'];
 const span = (e) => [e.starts_on, e.ends_on && e.ends_on > e.starts_on ? e.ends_on : e.starts_on];
@@ -38,11 +39,11 @@ export default function CalendarPage(props) {
         <div><h1 className="page-title">Calendar</h1><p className="page-sub">Sunday programs, events and every department plan, colour-coded by department.</p></div>
         <div className="seg">
           <button className={tab === 'month' ? 'on' : ''} onClick={() => setTab('month')}>Month</button>
-          <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>Events</button>
+          <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>HQ &amp; our plan</button>
           <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>Teaching plan</button>
         </div>
       </div>
-      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <Events {...props} /> : <Plan {...props} />}
+      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <><Reconcile {...props} /><h2 className="section-h">Events</h2><Events {...props} /></> : <Plan {...props} />}
     </div>
   );
 }
@@ -68,7 +69,7 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
   const [from, to] = monthRange(month);
   const list = mine.filter((e) => { const [a, b] = span(e); return a <= to && b >= from; }).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
   const upcoming = mine.filter((e) => span(e)[1] >= today).sort((a, b) => a.starts_on.localeCompare(b.starts_on)).slice(0, 6);
-  const canEdit = (e) => perm.manage && (e.center_id != null || perm.admin);
+  const canEdit = (e) => (e.center_id == null ? perm.switchCenter : perm.manage);
 
   async function save(f) {
     const row = { ...f, ends_on: f.ends_on || null, start_time: f.start_time || null, location: f.location || null, notes: f.notes || null };
@@ -92,7 +93,7 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
         </div>
         <button className="arrow" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon.right /></button>
       </div>
-      {perm.manage && (
+      {(perm.manage || perm.switchCenter) && (
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a list</button>
           <button className="btn lime" onClick={() => setEdit({ title: '', kind: 'Event', starts_on: from > today ? from : today, ends_on: '', start_time: '', location: '', notes: '', center_id: cid })}><Icon.plus /> Add event</button>
@@ -110,9 +111,9 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
           <ul className="ev-list">{upcoming.map((e) => <EventRow key={e.id} e={e} compact warn={[]} onClick={() => { setMonth(monthOf(e.starts_on)); }} />)}</ul>
         </section>
       </div>
-      {edit && <EventSheet ev={edit} canEdit={!edit.id || canEdit(edit)} admin={perm.admin} cid={cid} others={mine} ctx={{ progBy, meetingWd, planFor }}
+      {edit && <EventSheet ev={edit} canEdit={!edit.id || canEdit(edit)} admin={perm.switchCenter} cid={cid} others={mine} ctx={{ progBy, meetingWd, planFor }}
         onClose={() => setEdit(null)} onSave={save} onDelete={remove} />}
-      {paste && <PasteEvents year={month.year} cid={cid} admin={perm.admin} others={mine} ctx={{ progBy, meetingWd, planFor }} onClose={() => setPaste(false)}
+      {paste && <PasteEvents year={month.year} cid={cid} admin={perm.switchCenter} others={mine} ctx={{ progBy, meetingWd, planFor }} onClose={() => setPaste(false)}
         onSaved={() => { setPaste(false); reload(); }} setError={setError} />}
     </>
   );
@@ -252,14 +253,14 @@ function Plan({ D, latest, today, perm, progBy, reload, setError }) {
         </div>
         <button className="arrow" disabled={semIdx >= SEMESTERS.length - 1} onClick={() => setSem(SEMESTERS[semIdx + 1])} aria-label="Next semester"><Icon.right /></button>
       </div>
-      {perm.manage && <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a plan</button></div>}
+      {(perm.manage || perm.switchCenter) && <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a plan</button></div>}
       <section className="card flush">
         <div style={{ overflowX: 'auto' }}>
           <table className="gtable left plan-table">
             <thead><tr><th>Sunday</th><th>HQ / center plan</th><th>What happened</th><th className="desk-only" /></tr></thead>
             <tbody>
               {rows.map(({ s, plan, act, status }) => (
-                <tr key={s} className={s === latest ? 'sel' : ''} onClick={() => perm.manage && setEdit({ sunday: s, center_id: plan ? plan.center_id ?? null : perm.admin ? null : cid, series: plan?.series || '', topic: plan?.topic || '', teacher: plan?.teacher || '', notes: plan?.notes || '' })}>
+                <tr key={s} className={s === latest ? 'sel' : ''} onClick={() => (perm.manage || perm.switchCenter) && setEdit({ sunday: s, center_id: plan ? plan.center_id ?? null : perm.switchCenter ? null : cid, series: plan?.series || '', topic: plan?.topic || '', teacher: plan?.teacher || '', notes: plan?.notes || '' })}>
                   <td style={{ whiteSpace: 'nowrap' }}><b>{etLabel(s)}</b><div className="tiny muted">{fmtGreg(s)}</div>{status[0] && <div className="mob-only"><span className={`tag ${status[1]}`}>{status[0]}</span></div>}</td>
                   <td className="am">{plan ? <>{plan.series && <span className="tag">{plan.series}</span>} {plan.topic}<div className="tiny muted">{plan.teacher}{plan.center_id == null ? ' · HQ' : ''}</div></> : <span className="faint">—</span>}</td>
                   <td className="am">{act?.kind ? <>{act.kind === 'Teaching' ? '' : <span className="tag">{act.kind}</span>} {act.topic}<div className="tiny muted">{act.minister}</div></> : <span className="faint">—</span>}</td>
@@ -280,12 +281,12 @@ function Plan({ D, latest, today, perm, progBy, reload, setError }) {
             </div>
             <label>Topic<input name="topic" defaultValue={edit.topic} /></label>
             <label>Notes<textarea name="notes" rows={2} defaultValue={edit.notes} /></label>
-            <label>Plan for<select name="scope" defaultValue={edit.center_id == null ? 'all' : 'center'} disabled={!perm.admin}><option value="all">All centers (HQ plan)</option><option value="center">This center only</option></select></label>
+            <label>Plan for<select name="scope" defaultValue={edit.center_id == null ? 'all' : 'center'} disabled={!perm.switchCenter}><option value="all">All centers (HQ plan)</option><option value="center">This center only</option></select></label>
             <button className="btn lime wide">Save plan</button>
           </form>
         </Sheet>
       )}
-      {paste && <PastePlan year={toEthiopian(semesterStart(sem)).year} admin={perm.admin} cid={cid} D={D} onClose={() => setPaste(false)} onSaved={() => { setPaste(false); reload(); }} setError={setError} />}
+      {paste && <PastePlan year={toEthiopian(semesterStart(sem)).year} admin={perm.switchCenter} cid={cid} D={D} onClose={() => setPaste(false)} onSaved={() => { setPaste(false); reload(); }} setError={setError} />}
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ROLES } from '../lib/roles';
+import { ROLES, ACCESS } from '../lib/roles';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -69,6 +69,17 @@ export default function Users({ D, perm, profile, reload }) {
                 </tr>
               ))}
             </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card-title" style={{ marginBottom: 4 }}>Who can do what</div>
+        <div className="card-sub" style={{ marginBottom: 10 }}>The database enforces the same rules, so a role can’t see or change more than shown here.</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="gtable access">
+            <thead><tr><th>What</th>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k, l]) => <th key={k} title={l}>{l.replace(' / Visionary', '')}</th>)}</tr></thead>
+            <tbody>{ACCESS.map(([what, who]) => <tr key={what}><td>{what}</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{who.includes(k) ? <span className="yes">✓</span> : <span className="faint">–</span>}</td>)}</tr>)}</tbody>
           </table>
         </div>
       </section>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, semesterOf, semName, SEMESTERS, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, monthRange, addDays } from '../lib/ethiopian';
-import { deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen } from '../lib/plans';
+import { deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen, effStatus, needsReason, isPostponed } from '../lib/plans';
 import { toExcel, toPdf, tableText } from '../lib/exports';
 import { Sheet, Icon } from './common';
 
@@ -41,7 +41,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
   const byDept = D.departments.map((d) => ({ d, plans: plans.filter((p) => p.department_id === d.id) })).filter((x) => x.plans.length);
   const stat = (list) => {
     const due = list.filter((i) => i.due <= today || i.status !== 'planned');
-    return { total: list.length, due: due.length, done: list.filter((i) => i.status === 'done').length, notDone: list.filter((i) => i.status === 'not_done').length };
+    return { total: list.length, due: due.length, done: list.filter((i) => i.status === 'done').length, notDone: list.filter((i) => effStatus(i, today) === 'not_done').length };
   };
   return (
     <>
@@ -65,7 +65,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
                     <li key={p.id}>
                       <button className="plan-row" onClick={() => setOpen(p)}>
                         <span className="plan-title am">{p.title}</span>
-                        <span className="plan-meta">{p.timing_note || KIND_LABEL[pi[0]?.due_kind]}{Number(p.budget) ? ` · ${birr(p.budget)}` : ''}</span>
+                        <span className="plan-meta">{p.timing_note || KIND_LABEL[pi[0]?.due_kind]}{Number(p.budget) ? ` · ${birr(p.budget)}` : ''}{pi.some((i) => needsReason(i, today)) && <span className="tag bad" style={{ marginLeft: 6 }}>reason needed</span>}{pi.some(isPostponed) && <span className="tag sun" style={{ marginLeft: 6 }}>postponed</span>}</span>
                       </button>
                       <span className="item-dots">
                         {pi.slice(0, 30).map((i) => {
@@ -100,15 +100,20 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
   const [due, setDue] = useState(item.due);
   const [budget, setBudget] = useState(item.budget ?? 0);
   const [note, setNote] = useState(item.note || '');
+  const [approvedBy, setApprovedBy] = useState(item.approved_by || '');
   const [busy, setBusy] = useState(false);
   const moved = due !== item.due;
+  const today = new Date().toISOString().slice(0, 10);
+  const lapsed = item.status === 'planned' && effStatus(item, today) === 'not_done';
   async function save() {
-    if (status === 'not_done' && !reason.trim()) return setError('Please write why it was not done.');
+    if ((status === 'not_done' || (lapsed && status === 'planned' && !moved)) && !reason.trim()) return setError('Please write why it was not done.');
+    if (moved && (!reason.trim() || !approvedBy.trim())) return setError('Postponing needs a reason and who approved it.');
     setBusy(true);
     try {
       await saveItem(item.id, { status, reason: reason.trim() || null, due, budget: Number(budget) || 0, note: note.trim() || null,
         done_on: status === 'done' ? (item.done_on || new Date().toISOString().slice(0, 10)) : null,
-        ...(moved ? { moved_from: item.moved_from || item.due } : {}) });
+        ...(lapsed && status === 'planned' && !moved ? { status: 'not_done' } : {}),
+        ...(moved ? { moved_from: item.moved_from || item.due, approved: true, approved_by: approvedBy.trim() } : {}) });
       reload(); onClose();
     } catch (e) { setError(`Not saved: ${e.message}`); }
     setBusy(false);
@@ -118,10 +123,12 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
       <div className="form">
         <p className="small muted" style={{ margin: 0 }}><span className="dot" style={{ background: deptColor(D, plan?.department_id) }} /> {deptName(D, plan?.department_id)} · {itemWhen(item)}{item.label ? ` · ${item.label}` : ''}{item.moved_from ? ` · moved from ${etLabel(item.moved_from)}` : ''}</p>
         {plan?.details && <p className="small am" style={{ margin: 0 }}>{plan.details}</p>}
+        {lapsed && <div className="banner warn">This month is over and it wasn’t marked, so it counts as <b>not done</b>. Mark it done, or write the reason.</div>}
+        {item.moved_from && <p className="tiny muted" style={{ margin: 0 }}>Postponed from {etLabel(item.moved_from, true)}{item.approved_by ? ` · approved by ${item.approved_by}` : ''}{item.reason ? ` · ${item.reason}` : ''}</p>}
         <div className="status-pick">
           {Object.entries(STATUS).map(([k, [l, c]]) => <button key={k} type="button" disabled={!perm.mark} className={`${status === k ? 'on' : ''} ${c}`} onClick={() => setStatus(k)}>{l}</button>)}
         </div>
-        {(status === 'not_done' || status === 'cancelled' || moved) && <label>{status === 'not_done' ? 'Why was it not done?' : 'Reason'}<textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. clashed with the HQ program" disabled={!perm.mark} /></label>}
+        {(status === 'not_done' || status === 'cancelled' || moved || lapsed) && <label>{moved ? 'Why is it postponed?' : status === 'not_done' || lapsed ? 'Why was it not done?' : 'Reason'}<textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. clashed with the HQ program" disabled={!perm.mark} /></label>}
         <label>Date {due && <span className="faint">{etLabel(due, true)} · {fmtGreg(due)}</span>}
           <span className="row" style={{ gap: 6 }}>
             <input type="date" value={due} onChange={(e) => setDue(e.target.value)} disabled={!perm.mark} style={{ flex: 1 }} />
@@ -129,6 +136,7 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
             <button type="button" className="btn ghost small" disabled={!perm.mark} onClick={() => setDue(nextMonth(due))}>+1 month</button>
           </span>
         </label>
+        {moved && <label>Postponing approved by<input value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} placeholder="e.g. leaders’ meeting Tikimt 11, center leader" /></label>}
         <div className="row2">
           <label>Budget for this item (birr)<input inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!perm.mark} /></label>
           <label>Note<input value={note} onChange={(e) => setNote(e.target.value)} disabled={!perm.mark} /></label>
@@ -269,38 +277,50 @@ function Budget({ D, sem }) {
 }
 
 /* ── Month-end budget request for Admin & Finance ───────────────── */
-export function requestFor(D, monthKey) {
+export function requestFor(D, monthKey, withSkipped = false) {
   const y = Number(monthKey.slice(0, 4)), m = Number(monthKey.slice(5));
   const [from, to] = monthRange({ year: y, month: m });
   const plans = new Map(D.plans.map((p) => [p.id, p]));
   const list = D.items.filter((i) => i.due >= from && i.due <= to && i.status !== 'cancelled' && plans.has(i.plan_id)).map((i) => ({ ...i, plan: plans.get(i.plan_id) }));
-  return { from, to, needs: list.filter((i) => Number(i.budget) > 0), free: list.filter((i) => !Number(i.budget)) };
+  const needs = list.filter((i) => Number(i.budget) > 0 && i.status !== 'done' && i.status !== 'not_done');
+  return { from, to, needs: withSkipped ? needs : needs.filter((i) => !i.request_skip), free: list.filter((i) => !Number(i.budget)) };
 }
-function MonthRequest({ D, today, sem }) {
+function MonthRequest({ D, today, sem, perm, reload, setError }) {
   const months = [...new Set(semesterItems(D, sem).map((i) => monthKeyOf(i.due)))].sort();
   const nextKey = monthKeyOf(addDays(today, 15));
   const [key, setKey] = useState(months.includes(nextKey) ? nextKey : months[0]);
   const [copied, setCopied] = useState('');
   if (!key) return <div className="card empty">No plans in this semester.</div>;
-  const { needs, free } = requestFor(D, key);
-  const total = needs.reduce((n, i) => n + Number(i.budget), 0);
+  const { needs, free } = requestFor(D, key, true);
+  const asked = needs.filter((i) => !i.request_skip);
+  const total = asked.reduce((n, i) => n + Number(i.budget), 0);
   const rep = {
     title: `Gaius ${D.center?.name || ''} – budget request, ${monthName(key)}`, file: `Gaius_${D.center?.name || ''}_budget_${monthName(key).replace(' ', '_')}`,
-    sub: `${needs.length} plans · total ${birr(total)}`,
-    sheets: [{ name: 'Budget request', head: ['Date', 'Department', 'Plan', 'Budget (birr)', 'Detail'], body: [...needs.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title, Number(i.budget), i.plan.budget_note || '']), ['', '', 'Total', total, '']] }],
+    sub: `${asked.length} plans · total ${birr(total)}`,
+    sheets: [{ name: 'Budget request', head: ['Date', 'Department', 'Plan', 'Budget (birr)', 'Detail'], body: [...asked.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.moved_from ? ` (postponed from ${etLabel(i.moved_from)})` : ''), Number(i.budget), i.plan.budget_note || '']), ['', '', 'Total', total, '']] }],
   };
+  async function toggle(i) {
+    try { await saveItem(i.id, { request_skip: !i.request_skip }); reload(); } catch (e) { setError(`Not saved: ${e.message}`); }
+  }
   return (
     <section className="card">
       <div className="card-head">
-        <div><div className="card-title">Budget request · {monthName(key)}</div><div className="card-sub">For the last leaders’ meeting of the month: check this list, then give it to Admin &amp; Finance to send to HQ.</div></div>
+        <div><div className="card-title">Budget request · {monthName(key)}</div><div className="card-sub">For the last leaders’ meeting of the month. Untick plans you won’t ask budget for; postponed plans move here automatically. Then give the list to Admin &amp; Finance.</div></div>
         <select className="small-select" value={key} onChange={(e) => setKey(e.target.value)}>{months.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}</select>
       </div>
       <table className="gtable left">
-        <thead><tr><th>Date</th><th>Department</th><th>Plan</th><th style={{ textAlign: 'right' }}>Birr</th></tr></thead>
+        <thead><tr><th>Ask</th><th>Date</th><th>Department</th><th>Plan</th><th style={{ textAlign: 'right' }}>Birr</th></tr></thead>
         <tbody>
-          {needs.map((i) => <tr key={i.id}><td>{itemWhen(i)}</td><td><span className="dot" style={{ background: deptColor(D, i.plan.department_id) }} /> {deptName(D, i.plan.department_id)}</td><td className="am">{i.plan.title}{i.plan.budget_note && <div className="tiny muted">{i.plan.budget_note}</div>}</td><td className="num" style={{ textAlign: 'right' }}>{Number(i.budget).toLocaleString()}</td></tr>)}
-          {needs.length === 0 && <tr><td colSpan={4} className="muted">Nothing needs budget this month.</td></tr>}
-          <tr className="total"><td colSpan={3}>Total</td><td className="num" style={{ textAlign: 'right' }}>{total.toLocaleString()}</td></tr>
+          {needs.map((i) => (
+            <tr key={i.id} className={i.request_skip ? 'skipped' : ''}>
+              <td><input type="checkbox" checked={!i.request_skip} disabled={!perm.mark} onChange={() => toggle(i)} aria-label={`Ask budget for ${i.plan.title}`} /></td>
+              <td>{itemWhen(i)}</td><td><span className="dot" style={{ background: deptColor(D, i.plan.department_id) }} /> {deptName(D, i.plan.department_id)}</td>
+              <td className="am">{i.plan.title}{i.moved_from && <span className="tag sun" style={{ marginLeft: 6 }}>postponed from {etLabel(i.moved_from)}</span>}{i.plan.budget_note && <div className="tiny muted">{i.plan.budget_note}</div>}</td>
+              <td className="num" style={{ textAlign: 'right' }}>{Number(i.budget).toLocaleString()}</td>
+            </tr>
+          ))}
+          {needs.length === 0 && <tr><td colSpan={5} className="muted">Nothing needs budget this month.</td></tr>}
+          <tr className="total"><td colSpan={4}>Total to ask{needs.length !== asked.length ? ` (${needs.length - asked.length} left out)` : ''}</td><td className="num" style={{ textAlign: 'right' }}>{total.toLocaleString()}</td></tr>
         </tbody>
       </table>
       <div className="row" style={{ marginTop: 12, flexWrap: 'wrap' }}>
@@ -315,22 +335,38 @@ function MonthRequest({ D, today, sem }) {
 }
 
 /* ── Done / not done (monthly or semester) ───────────────────────── */
+export const STATUS_TEXT = (i, today) => {
+  const st = effStatus(i, today);
+  if (st === 'planned' && i.moved_from) return 'Postponed';
+  if (st === 'not_done' && i.status === 'planned') return 'Not done (month over, not marked)';
+  return STATUS[st][0];
+};
 export function planReport(D, from, to, label) {
+  const today = new Date().toISOString().slice(0, 10);
   const plans = new Map(D.plans.map((p) => [p.id, p]));
-  const list = D.items.filter((i) => i.due >= from && i.due <= to && plans.has(i.plan_id)).map((i) => ({ ...i, plan: plans.get(i.plan_id) }));
+  const list = D.items.filter((i) => i.due >= from && i.due <= to && plans.has(i.plan_id)).map((i) => ({ ...i, plan: plans.get(i.plan_id) }))
+    .sort((a, b) => a.due.localeCompare(b.due));
   const depts = D.departments.filter((d) => list.some((i) => i.plan.department_id === d.id));
-  const row = (i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.label ? ` – ${i.label}` : ''), Number(i.budget) || '', i.reason || i.note || ''];
+  const st = (i) => effStatus(i, today);
+  const perf = depts.map((d) => {
+    const x = list.filter((i) => i.plan.department_id === d.id);
+    const due = x.filter((i) => st(i) !== 'planned' || i.due <= today);
+    const done = x.filter((i) => st(i) === 'done').length;
+    return [d.name, x.length, done, x.filter((i) => st(i) === 'not_done').length, x.filter((i) => i.moved_from && st(i) === 'planned').length,
+      x.filter((i) => st(i) === 'cancelled').length, x.filter((i) => st(i) === 'planned').length, due.length ? `${Math.round((done / due.length) * 100)}%` : '–',
+      x.reduce((n, i) => n + Number(i.budget || 0), 0), x.filter((i) => st(i) === 'done').reduce((n, i) => n + Number(i.budget || 0), 0)];
+  });
+  const tot = perf.reduce((t, r) => t.map((v, k) => (k === 0 ? 'All departments' : k === 7 ? '' : v + r[k])), ['', 0, 0, 0, 0, 0, 0, '', 0, 0]);
+  const dueAll = list.filter((i) => st(i) !== 'planned' || i.due <= today).length;
+  tot[7] = dueAll ? `${Math.round((tot[2] / dueAll) * 100)}%` : '–';
   return {
     title: `Gaius ${D.center?.name || ''} – plan report, ${label}`, file: `Gaius_${D.center?.name || ''}_plan_report_${label.replace(/\W+/g, '_')}`,
-    sub: `${list.filter((i) => i.status === 'done').length} done · ${list.filter((i) => i.status === 'not_done').length} not done · ${list.filter((i) => i.status === 'planned').length} not marked`,
+    sub: `${tot[2]} done · ${tot[3]} not done · ${tot[4]} postponed · ${tot[6]} still to come`,
     sheets: [
-      { name: 'By department', head: ['Department', 'Planned', 'Done', 'Not done', 'Not marked', 'Budget'], body: depts.map((d) => {
-        const x = list.filter((i) => i.plan.department_id === d.id);
-        return [d.name, x.length, x.filter((i) => i.status === 'done').length, x.filter((i) => i.status === 'not_done').length, x.filter((i) => i.status === 'planned').length, x.reduce((n, i) => n + Number(i.budget || 0), 0)];
-      }) },
-      { name: 'Done', head: ['When', 'Department', 'Plan', 'Budget', 'Note'], body: list.filter((i) => i.status === 'done').map(row) },
-      { name: 'Not done', head: ['When', 'Department', 'Plan', 'Budget', 'Reason'], body: list.filter((i) => i.status === 'not_done').map(row) },
-      { name: 'Not marked yet', head: ['When', 'Department', 'Plan', 'Budget', 'Note'], body: list.filter((i) => i.status === 'planned').map(row) },
+      { name: 'Department performance', head: ['Department', 'Planned', 'Done', 'Not done', 'Postponed', 'Cancelled', 'Still to come', 'Done so far', 'Budget planned', 'Budget used (done)'], body: [...perf, tot] },
+      { name: 'All activities', head: ['When', 'Department', 'Activity', 'Status', 'Budget', 'Reason / note'],
+        body: list.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.label ? ` – ${i.label}` : ''), STATUS_TEXT(i, today), Number(i.budget) || '',
+          [i.reason, i.moved_from ? `postponed from ${etLabel(i.moved_from)}${i.approved_by ? `, approved by ${i.approved_by}` : ''}` : '', i.note].filter(Boolean).join(' · ') || (needsReason(i, today) ? 'reason needed' : '')]) },
     ],
   };
 }
@@ -338,42 +374,55 @@ function DoneReport({ D, today, sem, perm, reload, setError }) {
   const months = [...new Set(semesterItems(D, sem).map((i) => monthKeyOf(i.due)))].sort();
   const [key, setKey] = useState('sem');
   const [item, setItem] = useState(null);
+  const [only, setOnly] = useState('all');
   const [from, to, label] = key === 'sem' ? [semesterStart(sem), semesterEnd(sem), semName(sem)] : [...monthRange({ year: Number(key.slice(0, 4)), month: Number(key.slice(5)) }), monthName(key)];
   const rep = planReport(D, from, to, label);
   const plans = new Map(D.plans.map((p) => [p.id, p]));
-  const pending = D.items.filter((i) => i.due >= from && i.due <= to && i.due < today && i.status === 'planned' && plans.has(i.plan_id)).map((i) => ({ ...i, plan: plans.get(i.plan_id) }));
+  const list = D.items.filter((i) => i.due >= from && i.due <= to && plans.has(i.plan_id)).map((i) => ({ ...i, plan: plans.get(i.plan_id) })).sort((a, b) => a.due.localeCompare(b.due));
+  const shown = list.filter((i) => only === 'all' || (only === 'reason' ? needsReason(i, today) : STATUS_TEXT(i, today).startsWith({ done: 'Done', not: 'Not done', post: 'Postponed', plan: 'Planned' }[only])));
+  const [perf] = rep.sheets;
   return (
     <>
       <section className="card">
         <div className="card-head">
-          <div><div className="card-title">Done / not done · {label}</div><div className="card-sub">{rep.sub}</div></div>
+          <div><div className="card-title">Department performance · {label}</div><div className="card-sub">{rep.sub}. Items whose month is over and weren’t marked count as not done.</div></div>
           <div className="row">
             <select className="small-select" value={key} onChange={(e) => setKey(e.target.value)}><option value="sem">Whole {semName(sem)}</option>{months.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}</select>
             <button className="btn ghost small" onClick={() => toPdf(rep)}>PDF</button><button className="btn ghost small" onClick={() => toExcel(rep)}>Excel</button>
           </div>
         </div>
-        <table className="gtable">
-          <thead><tr>{rep.sheets[0].head.map((h) => <th key={h}>{h}</th>)}</tr></thead>
-          <tbody>{rep.sheets[0].body.map((r) => <tr key={r[0]}>{r.map((v, i) => <td key={i} className={i ? 'num' : ''}>{i === 5 ? (v ? v.toLocaleString() : '–') : v}</td>)}</tr>)}</tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="gtable">
+            <thead><tr>{perf.head.map((h) => <th key={h}>{h}</th>)}</tr></thead>
+            <tbody>{perf.body.map((r, k) => <tr key={r[0]} className={k === perf.body.length - 1 ? 'total' : ''}>{r.map((v, i) => <td key={i} className={i ? 'num' : ''}>{i >= 8 ? (v ? v.toLocaleString() : '–') : v}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
       </section>
-      {pending.length > 0 && (
-        <section className="card">
-          <div className="card-head"><div><div className="card-title">Date passed, not marked ({pending.length})</div><div className="card-sub">Mark them done or not done so the report is complete.</div></div></div>
-          <ul className="ev-list">{pending.map((i) => (
-            <li key={i.id}><button className="ev-row" onClick={() => setItem(i)}>
-              <span className="pdot" style={{ background: deptColor(D, i.plan.department_id) }} />
-              <span style={{ minWidth: 0, flex: 1 }}><span className="prog-title am">{i.plan.title}</span><span className="prog-meta" style={{ display: 'block' }}>{deptName(D, i.plan.department_id)} · {itemWhen(i)}</span></span>
-            </button></li>
-          ))}</ul>
-        </section>
-      )}
-      {rep.sheets[2].body.length > 0 && (
-        <section className="card">
-          <div className="card-head"><div><div className="card-title">Not done and why</div></div></div>
-          <table className="gtable left"><thead><tr><th>When</th><th>Plan</th><th>Reason</th></tr></thead><tbody>{rep.sheets[2].body.map((r, i) => <tr key={i}><td>{r[0]}</td><td className="am">{r[2]}<div className="tiny muted">{r[1]}</div></td><td>{r[4]}</td></tr>)}</tbody></table>
-        </section>
-      )}
+      <section className="card">
+        <div className="card-head">
+          <div><div className="card-title">All activities ({shown.length})</div><div className="card-sub">Tap one to mark it, give the reason, or postpone it (needs a reason and who approved it).</div></div>
+          <div className="seg">{[['all', 'All'], ['done', 'Done'], ['not', 'Not done'], ['reason', 'Reason needed'], ['post', 'Postponed'], ['plan', 'To come']].map(([k, l]) => <button key={k} className={only === k ? 'on' : ''} onClick={() => setOnly(k)}>{l}</button>)}</div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="gtable left act-table">
+            <thead><tr><th>When</th><th>Department</th><th>Activity</th><th>Status</th><th>Reason / note</th></tr></thead>
+            <tbody>
+              {shown.map((i) => {
+                const t = STATUS_TEXT(i, today);
+                return (
+                  <tr key={i.id} onClick={() => setItem(i)}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{itemWhen(i)}</td>
+                    <td><span className="dot" style={{ background: deptColor(D, i.plan.department_id) }} /> {deptName(D, i.plan.department_id)}</td>
+                    <td className="am">{i.plan.title}{i.label ? ` – ${i.label}` : ''}</td>
+                    <td><span className={`tag ${t.startsWith('Done') ? 'ok' : t.startsWith('Not') ? 'bad' : t === 'Postponed' ? 'sun' : ''}`}>{t}</span></td>
+                    <td className="small">{i.reason || i.note || (needsReason(i, today) ? <span className="tag bad">reason needed</span> : '')}{i.moved_from ? <div className="tiny muted">from {etLabel(i.moved_from)}{i.approved_by ? `, approved by ${i.approved_by}` : ''}</div> : null}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
       {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
     </>
   );

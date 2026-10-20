@@ -68,7 +68,7 @@ export default function Leadership({ D, idx, latest, today, perm, profile, reloa
         );
       })}
       {sel && <PersonEval c={sel} criteria={criteria} perm={perm} profile={profile} today={today} cid={cid} idx={idx} latest={latest} onClose={() => setOpen(null)} reload={reload} setError={setError} openPerson={openPerson} />}
-      {crit && <CriteriaSheet all={D.criteria.filter((c) => c.center_id == null || c.center_id === cid)} cid={cid} admin={perm.admin} onClose={() => setCrit(false)} reload={reload} setError={setError} />}
+      {crit && <CriteriaSheet all={D.criteria.filter((c) => c.center_id == null || c.center_id === cid)} cid={cid} admin={perm.switchCenter} onClose={() => setCrit(false)} reload={reload} setError={setError} />}
       {pick && <PickSheet D={D} onClose={() => setPick(false)} onPick={async (id) => {
         const { error } = await supabase.from('people').update({ leader_stage: 'candidate' }).eq('id', id);
         if (error) setError(`Not saved: ${error.message}`); setPick(false); reload();

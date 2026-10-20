@@ -20,6 +20,10 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const [rankDir, setRankDir] = useState('top');
   const [ncView, setNcView] = useState('since');
   const [expanded, setExpanded] = useState(false);
+  const [ov, setOv] = useState({});             // a card's own period, overriding the page period
+  const Pf = (card) => (ov[card] ? periodOf({ ...ov[card], year: ov[card].year ?? period.year }) : P);
+  const cardPeriod = (card) => <CardPeriod value={ov[card]} year={period.year} pageLabel={P.label} onChange={(v) => setOv((o) => ({ ...o, [card]: v }))} />;
+  const weeksOf = (Pc) => idx.held.filter((s) => s >= Pc.from && s <= Pc.to);
 
   const heldIdx = idx.held.indexOf(sel);
   const prevS = heldIdx > 0 ? idx.held[heldIdx - 1] : null;
@@ -28,13 +32,14 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const years = useMemo(() => [...new Set(idx.held.map((s) => toEthiopian(s).year))].sort((a, b) => b - a), [idx.held]);
 
   const weeks = useMemo(() => idx.held.filter((s) => s >= P.from && s <= P.to), [idx.held, P.from, P.to]);
-  const avgPresent = weeks.length ? weeks.reduce((n, s) => n + summaries[s].present, 0) / weeks.length : null;
-  const coreRates = weeks.map((s) => summaries[s].rate).filter((v) => v != null);
+  const PB = Pf('bars'), bWeeks = weeksOf(PB), PL = Pf('rate'), lWeeks = weeksOf(PL);
+  const avgPresent = bWeeks.length ? bWeeks.reduce((n, s) => n + summaries[s].present, 0) / bWeeks.length : null;
+  const coreRates = lWeeks.map((s) => summaries[s].rate).filter((v) => v != null);
   const avgCore = coreRates.length ? coreRates.reduce((a, b) => a + b, 0) / coreRates.length : null;
   const pick = (s) => setWeek(s === latest ? null : s);
 
-  const rateWeeks = weeks.map((s) => ({ sunday: s, note: noteOf(progBy[s]), values: { rate: summaries[s].rate, members: summaries[s].memberRate, leaders: summaries[s].leaderRate } }));
-  const barWeeks = weeks.map((s) => {
+  const rateWeeks = lWeeks.map((s) => ({ sunday: s, note: noteOf(progBy[s]), values: { rate: summaries[s].rate, members: summaries[s].memberRate, leaders: summaries[s].leaderRate } }));
+  const barWeeks = bWeeks.map((s) => {
     const v = {};
     for (const r of idx.bySunday[s] || []) if (r.status === 'Present') { const k = barKey(r); v[k] = (v[k] || 0) + 1; }
     return { sunday: s, values: v, note: noteOf(progBy[s]) };
@@ -45,7 +50,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const firstTimers = D.people.filter((p) => p.week_joined === sel).length;
 
   // new comers in the period
+  const PN = Pf('nc');
   const pipeline = useMemo(() => {
+    const P = PN, weeks = weeksOf(PN);
     const inP = (d) => d && d >= P.from && d <= P.to;
     const first = D.people.filter((p) => inP(p.week_joined) && p.week_joined <= sel);
     const cameBack = first.filter((p) => weeks.some((s) => s > p.week_joined && idx.byPerson[p.id]?.[s]?.status === 'Present'));
@@ -53,21 +60,24 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
     const ready = ncRows.map((r) => personBy[r.person_id]).filter(Boolean).filter((p) => readiness(p, idx.byPerson[p.id], idx.held, sel).ready);
     const becameMembers = D.history.filter((h) => h.category === 'Member' && inP(h.since) && h.note !== 'from sheet').length;
     return { first: first.length, cameBack: cameBack.length, activeNow: ncRows.length, ready, becameMembers };
-  }, [idx, D.people, D.history, P.from, P.to, sel, weeks, rows, personBy]);
+  }, [idx, D.people, D.history, PN.from, PN.to, sel, rows, personBy]); // eslint-disable-line
 
   // month by month inside the period
+  const PM = Pf('months');
   const months = useMemo(() => {
     const m = new Map();
-    for (const s of weeks) { const e = toEthiopian(s); const k = `${e.year}-${e.month}`; if (!m.has(k)) m.set(k, { k, name: ET_MONTHS[e.month], am: ET_MONTHS_AM[e.month], list: [] }); m.get(k).list.push(s); }
+    for (const s of weeksOf(PM)) { const e = toEthiopian(s); const k = `${e.year}-${e.month}`; if (!m.has(k)) m.set(k, { k, name: ET_MONTHS[e.month], am: ET_MONTHS_AM[e.month], list: [] }); m.get(k).list.push(s); }
     return [...m.values()].map((x) => {
       const r = x.list.map((s) => summaries[s].rate).filter((v) => v != null);
       return { ...x, present: x.list.reduce((n, s) => n + summaries[s].present, 0) / x.list.length, rate: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null };
     });
-  }, [weeks, summaries]);
+  }, [PM.from, PM.to, idx.held, summaries]); // eslint-disable-line
 
   // ranking over the period
   const isNC = rankGroup === 'New Comer';
+  const PR = Pf('rank');
   const ranked = useMemo(() => {
+    const P = PR, weeks = weeksOf(PR);
     const last = weeks.filter((s) => s <= sel).pop() || weeks[weeks.length - 1];
     if (!last) return { list: [], tooNew: [] };
     const list = (idx.bySunday[last] || []).filter((r) => personBy[r.person_id] && (isNC ? r.category === 'New Comer' && r.active : r.category === rankGroup)).map((r) => {
@@ -89,16 +99,23 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
     const main = list.filter((x) => !tooNew.includes(x))
       .sort((a, b) => (rankDir === 'top' ? b.score - a.score : a.score - b.score) || (b.weeks || 0) - (a.weeks || 0) || a.p.name.localeCompare(b.p.name));
     return { list: main, tooNew };
-  }, [idx, sel, weeks, personBy, rankGroup, rankDir, isNC, ncView, P.from, P.label]);
+  }, [idx, sel, personBy, rankGroup, rankDir, isNC, ncView, PR.from, PR.to, PR.label]); // eslint-disable-line
 
   // programs inside the period
+  const PP = Pf('progs');
   const progWeeks = useMemo(() => {
+    const P = PP, weeks = weeksOf(PP);
     const extra = Object.keys(progBy).filter((d) => d >= P.from && d <= P.to && d <= today && !idx.heldSet.has(d));
     return [...new Set([...weeks, ...extra])].sort().reverse();
-  }, [weeks, progBy, P.from, P.to, idx.heldSet, today]);
+  }, [progBy, PP.from, PP.to, idx.heldSet, idx.held, today]); // eslint-disable-line
 
   if (!cur) return <div className="page"><div className="card empty">No attendance recorded yet. Start on the Attendance page.</div></div>;
-  const toggle = (k) => setHidden((h) => { const n = new Set(h); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  // first tap shows only that group; further taps add or remove groups
+  const toggle = (k) => setHidden((h) => {
+    if (h.size === 0) return new Set(BAR_KEYS.filter((x) => x !== k));
+    const n = new Set(h); n.has(k) ? n.delete(k) : n.add(k);
+    return n.size === BAR_KEYS.length ? new Set() : n;
+  });
   const leaders = cur.byCat.Leader, members = cur.byCat.Member;
   const shown = expanded ? ranked.list : ranked.list.slice(0, 8);
 
@@ -116,7 +133,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <b className="pf-now">{P.label}</b>
       </div>
 
-      {perm.mark && <Reminders D={D} today={today} go={go} />}
+      {perm.meetingBanner && <Reminders D={D} today={today} go={go} />}
 
       <section className="kpis" aria-label={`Summary for ${etLabel(sel, true)}`}>
         <div className="kpi hero">
@@ -139,17 +156,19 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <section className="card span2">
           <div className="card-head">
             <div>
-              <div className="card-title">Who came each Sunday · {P.label}</div>
-              <div className="card-sub">Average {avgPresent != null ? avgPresent.toFixed(1) : '–'} people over {weeks.length} Sundays. Tap a bar to see that Sunday; tap a group to hide it.</div>
+              <div className="card-title">Who came each Sunday · {PB.label}</div>
+              <div className="card-sub">Average {avgPresent != null ? avgPresent.toFixed(1) : '–'} people over {bWeeks.length} Sundays. Tap a bar to see that Sunday. Tap a group to show only it; tap more to add them.</div>
             </div>
+            {cardPeriod('bars')}
           </div>
-          {weeks.length ? <StackedBars weeks={barWeeks} keys={BAR_KEYS} labels={BAR_LABELS} hidden={hidden} selected={sel} onSelect={pick} /> : <p className="muted small">No Sundays recorded in this period.</p>}
+          {bWeeks.length ? <StackedBars weeks={barWeeks} keys={BAR_KEYS} labels={BAR_LABELS} hidden={hidden} selected={sel} onSelect={pick} /> : <p className="muted small">No Sundays recorded in this period.</p>}
           <div className="legend">
             {BAR_KEYS.map((k) => (
               <button key={k} className={hidden.has(k) ? 'off' : ''} onClick={() => toggle(k)} aria-pressed={!hidden.has(k)}>
                 <span className="dot" style={{ background: CAT_COLOR[k] }} />{BAR_LABELS[k]}
               </button>
             ))}
+            {hidden.size > 0 && <button className="legend-all" onClick={() => setHidden(new Set())}>Show all</button>}
           </div>
         </section>
 
@@ -157,10 +176,11 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           <div className="card-head">
             <div>
               <div className="card-title">Leaders & members rate</div>
-              <div className="card-sub">The groups with a fixed list. Average {pct(avgCore)} in {P.label}. Informal members and new comers are counted above, not rated.</div>
+              <div className="card-sub">The groups with a fixed list. Average {pct(avgCore)} in {PL.label}. Informal members and new comers are counted above, not rated.</div>
             </div>
+            {cardPeriod('rate')}
           </div>
-          {weeks.length > 0 && <RateLines weeks={rateWeeks} selected={sel} onSelect={pick} series={[
+          {lWeeks.length > 0 && <RateLines weeks={rateWeeks} selected={sel} onSelect={pick} series={[
             { key: 'rate', label: 'Leaders & members', color: 'var(--lime-strong)', width: 3 },
             { key: 'members', label: 'Members', color: 'var(--c-member)' },
             { key: 'leaders', label: 'Leaders', color: 'var(--c-leader)', dash: '5 4' },
@@ -197,7 +217,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         </section>
 
         <section className="card">
-          <div className="card-head"><div><div className="card-title">New comers · {P.label}</div><div className="card-sub">Ready = 6 months since the first visit and at least {Math.round(READY_RATE * 100)}% since then. Leaders still decide.</div></div></div>
+          <div className="card-head"><div><div className="card-title">New comers · {PN.label}</div><div className="card-sub">Ready = 6 months since the first visit and at least {Math.round(READY_RATE * 100)}% since then. Leaders still decide.</div></div>{cardPeriod('nc')}</div>
           <div className="funnel">
             {[['First-time visitors', pipeline.first], ['Came back again', pipeline.cameBack], ['Active new comers now', pipeline.activeNow], ['Ready for membership', pipeline.ready.length], ['Became members', pipeline.becameMembers]].map(([l, n], i, arr) => (
               <div className="funnel-row" key={l}>
@@ -215,7 +235,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         </section>
 
         <section className="card">
-          <div className="card-head"><div><div className="card-title">Programs · {P.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div></div>
+          <div className="card-head"><div><div className="card-title">Programs · {PP.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div>{cardPeriod('progs')}</div>
           <ul className="prog-list scroll-y">
             {progWeeks.map((s) => {
               const p = progBy[s]; const e = toEthiopian(s);
@@ -234,7 +254,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         </section>
 
         <section className="card">
-          <div className="card-head"><div><div className="card-title">Month by month</div><div className="card-sub">Average per Sunday in {P.label}.</div></div></div>
+          <div className="card-head"><div><div className="card-title">Month by month</div><div className="card-sub">Average per Sunday in {PM.label}.</div></div>{cardPeriod('months')}</div>
           <table className="gtable">
             <thead><tr><th>Month</th><th className="hide-sm">Sundays</th><th>Total present</th><th>L+M rate</th></tr></thead>
             <tbody>
@@ -253,12 +273,13 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <section className="card span2">
           <div className="card-head">
             <div>
-              <div className="card-title">{isNC ? (ncView === 'since' ? 'New comers since they joined' : 'Membership review') : rankDir === 'top' ? 'Most faithful' : 'Needs encouragement'} · {P.label}</div>
+              <div className="card-title">{isNC ? (ncView === 'since' ? 'New comers since they joined' : 'Membership review') : rankDir === 'top' ? 'Most faithful' : 'Needs encouragement'} · {PR.label}</div>
               <div className="card-sub">{isNC
                 ? (ncView === 'since' ? 'Weekly follow-up: each person from their own first Sunday. Fewer than 4 Sundays is too early to rank.'
-                  : `For deciding membership: every Sunday from ${etLabel(P.from)} counts, so someone who joined late can't outrank someone who came all along.`)
+                  : `For deciding membership: every Sunday from ${etLabel(PR.from)} counts, so someone who joined late can't outrank someone who came all along.`)
                 : 'Present ÷ Sundays they were on the list in this period.'}</div>
             </div>
+            {cardPeriod('rank')}
             <div className="seg">
               <button className={rankDir === 'top' ? 'on' : ''} onClick={() => setRankDir('top')}>Top</button>
               <button className={rankDir === 'bottom' ? 'on' : ''} onClick={() => setRankDir('bottom')}>Lowest</button>
@@ -327,5 +348,18 @@ function Reminders({ D, today, go }) {
         </button>
       )}
     </div>
+  );
+}
+
+/* a card's own period: "Same as page" or a semester / the year / a month of the page year */
+function CardPeriod({ value, year, pageLabel, onChange }) {
+  const v = !value ? '' : value.kind === 'sem' ? `s${value.no}` : value.kind === 'year' ? 'y' : `m${value.month}`;
+  return (
+    <select className={`small-select card-period ${value ? 'on' : ''}`} value={v} aria-label="Period for this card"
+      onChange={(e) => { const x = e.target.value; onChange(!x ? null : x[0] === 's' ? { kind: 'sem', no: Number(x.slice(1)), year } : x === 'y' ? { kind: 'year', year } : { kind: 'month', month: Number(x.slice(1)), year }); }}>
+      <option value="">Same as page ({pageLabel})</option>
+      <option value="s1">Semester 1 · {year}</option><option value="s2">Semester 2 · {year}</option><option value="y">Year {year}</option>
+      {ET_MONTHS.map((m, i) => <option key={m} value={`m${i}`}>{m} {year}</option>)}
+    </select>
   );
 }
