@@ -2,9 +2,13 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { ONE } from '../lib/stats';
 import { Sheet, Initials, Icon } from './common';
+import { semesterOf, semName } from '../lib/ethiopian';
+import { deptColor, semesterItems, itemWhen } from '../lib/plans';
 
-export default function Departments({ D, perm, openPerson, reload, setError }) {
+export default function Departments({ D, perm, openPerson, reload, setError, today, go }) {
   const [edit, setEdit] = useState(null);
+  const sem = semesterOf(today);
+  const items = semesterItems(D, sem);
   const active = D.members.filter((m) => !m.until);
   const assigned = new Set(active.map((m) => m.person_id));
   const leaders = D.people.filter((p) => ['Leader', 'Senior Leader'].includes(p.category) && !p.archived);
@@ -15,36 +19,43 @@ export default function Departments({ D, perm, openPerson, reload, setError }) {
       <div className="page-head">
         <div>
           <h1 className="page-title">Departments</h1>
-          <p className="page-sub">Leaders serve in a department according to their grace and interest; members can join to serve too.</p>
+          <p className="page-sub">Who leads and serves, and how each department’s {semName(sem)} plan is going.</p>
         </div>
       </div>
       {unassignedLeaders.length > 0 && <div className="banner">Leaders not in a department yet: {unassignedLeaders.map((p) => p.name).join(', ')}.</div>}
-      <div className="dept-grid">
+      <div className="dept-grid2">
         {D.departments.map((d) => {
           const ms = active.filter((m) => m.department_id === d.id).map((m) => ({ ...m, p: D.people.find((p) => p.id === m.person_id) })).filter((m) => m.p);
           const heads = ms.filter((m) => m.role === 'leader');
           const rest = ms.filter((m) => m.role !== 'leader');
+          const its = items.filter((i) => i.plan.department_id === d.id);
+          const due = its.filter((i) => i.due <= today || i.status !== 'planned');
+          const doneN = its.filter((i) => i.status === 'done').length;
+          const budget = its.reduce((n, i) => n + Number(i.budget || 0), 0);
+          const next = its.filter((i) => i.status === 'planned' && i.due >= today && i.due_kind !== 'week')[0];
+          const c = deptColor(D, d.id);
           return (
-            <section key={d.id} className="card dept-card">
-              <div className="card-head" style={{ marginBottom: 0 }}>
-                <div>
+            <section key={d.id} className="dcard" style={{ '--dc': c }}>
+              <div className="dcard-top">
+                <span className="dcard-icon">{(d.name_am || d.name).trim()[0]}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="dept-name">{d.name}</div>
                   <div className="dept-am am">{d.name_am}</div>
                 </div>
                 {perm.manage && <button className="icon-btn" onClick={() => setEdit(d)} aria-label={`Edit ${d.name}`}><Icon.edit /></button>}
               </div>
-              <div>
-                <div className="tiny muted" style={{ fontWeight: 800, marginBottom: 6 }}>Leading</div>
-                <div className="chips">
-                  {heads.length ? heads.map((m) => <Chip key={m.id} m={m} lead onClick={() => openPerson(m.p.id)} />) : <span className="faint small">No leader yet</span>}
-                </div>
+              <div className="dcard-stats">
+                <div><b>{ms.length}</b><span>people</span></div>
+                <div><b>{its.length ? `${doneN}/${due.length}` : '–'}</b><span>plans done</span></div>
+                <div><b>{budget ? budget.toLocaleString() : '–'}</b><span>birr budget</span></div>
               </div>
-              <div>
-                <div className="tiny muted" style={{ fontWeight: 800, marginBottom: 6 }}>Serving ({rest.length})</div>
-                <div className="chips">
-                  {rest.length ? rest.map((m) => <Chip key={m.id} m={m} onClick={() => openPerson(m.p.id)} />) : <span className="faint small">Nobody yet</span>}
-                </div>
+              {its.length > 0 && <div className="progress"><span style={{ width: `${due.length ? (doneN / due.length) * 100 : 0}%`, background: c }} /></div>}
+              <div className="dcard-people">
+                {heads.map((m) => <Chip key={m.id} m={m} lead onClick={() => openPerson(m.p.id)} />)}
+                {rest.map((m) => <Chip key={m.id} m={m} onClick={() => openPerson(m.p.id)} />)}
+                {!ms.length && <span className="faint small">Nobody yet</span>}
               </div>
+              {next && <button className="dcard-next" onClick={() => go('plans')}>Next: <span className="am">{next.plan.title}</span> · {itemWhen(next)}</button>}
             </section>
           );
         })}

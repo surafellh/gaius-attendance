@@ -5,7 +5,7 @@ import { Icon } from './common';
 
 const PREFS_KEY = 'gaius-prefs';
 export function loadPrefs() {
-  try { return { start: 'home', text: 'normal', compact: false, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return { start: 'home', text: 'normal', compact: false }; }
+  try { return { start: 'home', text: 'normal', compact: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return { start: 'home', text: 'normal', compact: true }; }
 }
 export function applyPrefs(p) {
   document.documentElement.dataset.text = p.text;

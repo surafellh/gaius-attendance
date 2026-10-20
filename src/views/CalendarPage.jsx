@@ -4,6 +4,7 @@ import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS
   WEEKDAYS, sundaysOf, semesterOf, SEMESTERS, semesterStart, semName } from '../lib/ethiopian';
 import { parseEvents, parseReport } from '../lib/report';
 import { Icon, Sheet } from './common';
+import CalendarMonth from './CalendarMonth';
 
 export const EVENT_KINDS = ['Event', 'Retreat', 'Conference', 'Training', 'Outreach', 'Worship night', 'Holiday', 'Fellowship', 'HQ meeting', 'Other'];
 const span = (e) => [e.starts_on, e.ends_on && e.ends_on > e.starts_on ? e.ends_on : e.starts_on];
@@ -30,17 +31,18 @@ export function clashes(ev, events, { progBy, meetingWd, planFor }) {
 }
 
 export default function CalendarPage(props) {
-  const [tab, setTab] = useState('events');
+  const [tab, setTab] = useState('month');
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">Calendar</h1><p className="page-sub">Events for the center and HQ, and the teaching plan compared with what was actually taught.</p></div>
+        <div><h1 className="page-title">Calendar</h1><p className="page-sub">Sunday programs, events and every department plan, colour-coded by department.</p></div>
         <div className="seg">
+          <button className={tab === 'month' ? 'on' : ''} onClick={() => setTab('month')}>Month</button>
           <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>Events</button>
           <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>Teaching plan</button>
         </div>
       </div>
-      {tab === 'events' ? <Events {...props} /> : <Plan {...props} />}
+      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <Events {...props} /> : <Plan {...props} />}
     </div>
   );
 }

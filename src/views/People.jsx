@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { etLabel, semesterOf, semName, todayIso } from '../lib/ethiopian';
 import { CATEGORIES, ONE, SHORT, stageOf, STAGE_LABEL } from '../lib/stats';
 import { setResponsible } from '../lib/changes';
-import { ageOf } from '../lib/exports';
+import { ageOf, stayText, notesWithoutStay, stayNote } from '../lib/exports';
 import { bestMatch } from '../lib/names';
 import { Icon, CAT_COLOR, PersonInput } from './common';
 import { NewPersonSheet } from './Register';
@@ -24,7 +24,7 @@ const COLS = [
   ['gender', 'Sex', 70, 'sex'], ['phone', 'Phone', 140], ['invited_by', 'Invited by', 150, 'person'], ['week_joined', 'First Sunday', 130, 'joined'],
   ['full_name', 'Full name', 180], ['church', 'Church', 170], ['education', 'Education', 200], ['work', 'Work', 150], ['passion', 'Passion / talent', 150],
   ['area', 'Area', 130], ['birth_date', 'Date of birth', 140, 'date'], ['age', 'Age', 60, 'age'], ['level', 'Level', 70], ['start_teaching', 'First teaching', 140],
-  ['responsible', 'Responsible', 160, 'resp'], ['notes', 'Notes', 220],
+  ['stay', 'Time with us', 110, 'stay'], ['responsible', 'Responsible', 160, 'resp'], ['notes', 'Notes', 220, 'notes'],
 ];
 
 export default function People({ D, idx, latest, perm, openPerson, createRoll, reload, setError, personBy }) {
@@ -58,6 +58,8 @@ export default function People({ D, idx, latest, perm, openPerson, createRoll, r
   function cell(p, [k, , , kind]) {
     if (kind === 'sex') return <select disabled={dis} value={p.gender || ''} onChange={(e) => update(p, { gender: e.target.value || null })}><option value="">–</option><option value="M">M</option><option value="F">F</option></select>;
     if (kind === 'age') { const a = ageOf(p); return <span className="cell-ro">{a === '' ? '' : `${p.birth_date ? '' : '~'}${a}`}</span>; }
+    if (kind === 'stay') return <span className="cell-ro" title="From their first Sunday, or the Apr 2026 list moved forward to today">{stayText(p)}</span>;
+    if (kind === 'notes') return <input disabled={dis} defaultValue={notesWithoutStay(p.notes)} onBlur={(e) => update(p, { notes: [e.target.value.trim(), stayNote(p.notes)].filter(Boolean).join('\n') || null })} />;
     if (kind === 'joined') return <span className="cell-ro">{p.week_joined ? etLabel(p.week_joined, true) : <span className="faint">before records</span>}</span>;
     if (kind === 'date') return <input type="date" disabled={dis} defaultValue={p.birth_date || ''} onBlur={(e) => update(p, { birth_date: e.target.value || null, ...(e.target.value ? { birth_year: Number(e.target.value.slice(0, 4)) } : {}) })} />;
     if (kind === 'person') return <InviterCell p={p} people={D.people} disabled={dis} onSave={(name, id) => update(p, { invited_by: name || null, invited_by_id: id || null })} />;

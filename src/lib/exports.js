@@ -147,9 +147,9 @@ export const PROFILE_TABLES = [
 ];
 export function profilesReport(ctx, keys) {
   const { D, idx, latest } = ctx;
-  const head = ['No', 'Full name', 'Gender', 'Phone', 'Church', 'Education', 'Work', 'Passion / talent', 'Area', 'Age', 'Level', 'Joined', 'First teaching'];
+  const head = ['No', 'Full name', 'Gender', 'Phone', 'Church', 'Education', 'Work', 'Passion / talent', 'Area', 'Age', 'Time with us', 'Level', 'Joined', 'First teaching'];
   const row = (p, i) => [i + 1, p.full_name || p.name, p.gender || '', p.phone || '', p.church || '', p.education || '', p.work || '', p.passion || '', p.area || '',
-    ageOf(p), p.level || '', p.week_joined ? etLabel(p.week_joined, true) : '', p.start_teaching || ''];
+    ageOf(p), stayText(p), p.level || '', p.week_joined ? etLabel(p.week_joined, true) : '', p.start_teaching || ''];
   const live = D.people.filter((p) => !p.archived);
   const sheets = PROFILE_TABLES.filter(([k]) => keys.includes(k)).map(([k, label]) => {
     let list;
@@ -224,3 +224,30 @@ export function tableText(sh) {
   const rows = [sh.head, ...sh.body.map((r) => (Array.isArray(r) ? r.map((v) => (v === 'P' ? '✓' : v === 'A' ? '✕' : v)) : [r.group]))];
   return rows.map((r) => r.map((v) => String(v ?? '').replace(/\t|\n/g, ' ')).join('\t')).join('\n');
 }
+
+/* time with Gaius: from the first Sunday if we have it, otherwise from the "Years of stay (Apr 2026 list)" note,
+   moved forward to today so it never goes stale */
+const STAY_RE = /Years of stay \(Apr 2026 list\):\s*([^\n;]+)/i;
+export function stayMonths(p, today = new Date()) {
+  const now = today.getFullYear() * 12 + today.getMonth() + today.getDate() / 31;
+  const m = (p.notes || '').match(STAY_RE);
+  let fromNote = null;
+  if (m) {
+    const t = m[1].toLowerCase().replace('½', ' 1/2');
+    const num = (x) => x.split(/\s+/).reduce((n, w) => n + (w.includes('/') ? Number(w.split('/')[0]) / Number(w.split('/')[1]) : Number(w) || 0), 0);
+    const y = t.match(/([\d\s/]+)\s*y/), mo = t.match(/([\d\s/]+)\s*mo/), wk = t.match(/([\d\s/]+)\s*w/);
+    const months = y ? num(y[1].trim()) * 12 : mo ? num(mo[1].trim()) : wk ? num(wk[1].trim()) / 4.3 : null;
+    if (months != null) fromNote = months + (now - (2026 * 12 + 3 + 15 / 31)); // list was made mid-April 2026
+  }
+  const j = p.week_joined ? new Date(p.week_joined + 'T00:00:00') : null;
+  const fromJoin = j ? now - (j.getFullYear() * 12 + j.getMonth() + j.getDate() / 31) : null;
+  return fromJoin != null && (fromNote == null || fromJoin >= fromNote - 1) ? fromJoin : fromNote;
+}
+export function stayText(p) {
+  const m = stayMonths(p);
+  if (m == null) return '';
+  const y = Math.floor(m / 12), mo = Math.floor(m % 12);
+  return y ? `${y} yr${y > 1 ? 's' : ''}${mo ? ` ${mo} mo` : ''}` : mo ? `${mo} month${mo > 1 ? 's' : ''}` : 'under a month';
+}
+export const notesWithoutStay = (n) => (n || '').replace(STAY_RE, '').replace(/^\s*[;\n]\s*|\s*[;\n]\s*$/g, '').trim();
+export const stayNote = (n) => (n || '').match(STAY_RE)?.[0] || '';

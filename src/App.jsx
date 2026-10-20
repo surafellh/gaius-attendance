@@ -15,6 +15,8 @@ import Meeting from './views/Meeting';
 import CalendarPage from './views/CalendarPage';
 import Leadership from './views/Leadership';
 import ExportSheet from './views/ExportSheet';
+import PlansPage from './views/Plans';
+import Roadmap from './views/Roadmap';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 
@@ -60,8 +62,8 @@ export default function App() {
 /* Tab groups: Home · Follow-up (people) · Coordination (programs & plans) · Admin */
 const GROUPS = [
   ['home', 'Home', Icon.home, [['home', 'Dashboard']]],
-  ['follow', 'Follow-up', Icon.people, [['attendance', 'Attendance'], ['people', 'People'], ['calls', 'Calls'], ['leadership', 'Leadership']]],
-  ['coord', 'Coordination', Icon.cal, [['calendar', 'Calendar & plans'], ['meeting', 'Meetings'], ['departments', 'Departments']]],
+  ['follow', 'Follow-up', Icon.people, [['attendance', 'Attendance'], ['people', 'People'], ['calls', 'Calls'], ['leadership', 'Leadership'], ['roadmap', 'Roadmap']]],
+  ['coord', 'Coordination', Icon.cal, [['calendar', 'Calendar'], ['plans', 'Plans & budget'], ['meeting', 'Meetings'], ['departments', 'Departments']]],
   ['admin', 'Admin', Icon.shield, [['users', 'Users & access']], 'users'],
 ];
 const groupOf = (tab) => GROUPS.find((g) => g[3].some(([k]) => k === tab)) || GROUPS[0];
@@ -72,7 +74,7 @@ function Main({ profile }) {
   const [menu, setMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [D, setD] = useState({ people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true });
+  const [D, setD] = useState({ people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true });
   const [personId, setPersonId] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
@@ -93,6 +95,11 @@ function Main({ profile }) {
           q('eval_criteria'), q('evaluations'), q('events'), q('meetings'), q('agenda_items'), q('teaching_plan')]);
         p2 = { criteria: criteria.sort((a, b) => a.sort - b.sort || a.id - b.id), evals, events, meetings, agenda, plan, p2: true };
       } catch { p2.p2 = false; }
+      // Release 2 tables: plans and the teaching roadmap
+      try {
+        const [plans, items, lessons, plessons] = await Promise.all([q('plans'), q('plan_items'), q('lessons'), q('person_lessons')]);
+        Object.assign(p2, { plans: plans.sort((a, b) => a.sort - b.sort || a.id - b.id), items, lessons: lessons.sort((a, b) => a.sort - b.sort || a.id - b.id), plessons, r2: true });
+      } catch { Object.assign(p2, { plans: [], items: [], lessons: [], plessons: [], r2: false }); }
       setD({
         people: people.filter((p) => (p.center_id || 1) === center?.id).sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
         att, programs, departments: departments.sort((a, b) => a.sort - b.sort), members, assignments, history, center, ...p2,
@@ -260,6 +267,9 @@ function Main({ profile }) {
             {tab === 'meeting' && <Meeting {...ctx} />}
             {tab === 'calendar' && <CalendarPage {...ctx} />}
             {tab === 'leadership' && <Leadership {...ctx} />}
+            {tab === 'plans' && <PlansPage {...ctx} />}
+            {tab === 'roadmap' && <Roadmap {...ctx} />}
+            {['plans', 'roadmap', 'calendar'].includes(tab) && !D.r2 && <div className="banner err">Plans and the roadmap need the release 2 SQL to be run in Supabase once.</div>}
             {['meeting', 'calendar', 'leadership'].includes(tab) && !D.p2 && <div className="banner err">This part needs the Phase 2 SQL (v3_schema.sql) to be run in Supabase once.</div>}
           </>
         )}

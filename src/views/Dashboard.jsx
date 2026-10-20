@@ -109,8 +109,12 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           <WeekPicker value={week} latest={latest} onChange={setWeek} held={idx.held} info={calInfo} allowLatest />
           {week && <button className="chip-back" onClick={() => setWeek(null)}>Viewing {etLabel(sel)} · back to latest <Icon.x width="14" height="14" /></button>}
         </div>
-        <PeriodPicker value={period} onChange={(v) => { setPeriod(v); setExpanded(false); }} years={years} />
       </section>
+      <div className="period-float">
+        <span className="pf-label">Charts &amp; lists for</span>
+        <PeriodPicker value={period} onChange={(v) => { setPeriod(v); setExpanded(false); }} years={years} />
+        <b className="pf-now">{P.label}</b>
+      </div>
 
       {perm.mark && <Reminders D={D} today={today} go={go} />}
 
