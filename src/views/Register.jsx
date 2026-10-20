@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, sundaysOf, SEMESTERS, todayIso } from '../lib/ethiopian';
 import { CATEGORIES, SHORT, ONE } from '../lib/stats';
-import { Icon, Sheet, Initials, CAT_COLOR } from './common';
+import { Icon, Sheet, Initials, CAT_COLOR, PersonInput } from './common';
+import { bestMatch, findPeople } from '../lib/names';
 import { ProfileForm } from './Profiles';
 
 const recentSundays = () => {
@@ -119,50 +120,61 @@ export default function Register({ D, perm, latest, openPerson, saveMark, create
   );
 }
 
-export async function registerPerson({ D, draft, createRoll, setError, category = 'New Comer' }) {
+export async function registerPerson({ D, draft, createRoll, setError, category: cat = 'New Comer' }) {
+  const category = draft.category || cat;
   const sn = Math.max(0, ...D.people.map((p) => p.sn || 0)) + 1;
-  const inviter = D.people.find((p) => p.name.toLowerCase() === (draft.invited_by || '').trim().toLowerCase());
+  const inviter = draft.invited_by_id ? { id: draft.invited_by_id } : bestMatch(draft.invited_by || '', D.people);
+  const joined = draft.week_joined || null;
   const { data, error } = await supabase.from('people').insert({
-    sn, name: draft.name.trim(), phone: (draft.phone || '').trim() === '+251' ? null : draft.phone.trim(),
-    invited_by: draft.invited_by?.trim() || null, invited_by_id: inviter?.id || null,
-    week_joined: draft.week_joined, category, nc_active: true, center_id: D.center?.id || 1,
-    responsible: draft.responsible || null,
+    sn, name: draft.name.trim(), phone: (draft.phone || '').trim() === '+251' ? null : (draft.phone || '').trim() || null,
+    invited_by: draft.invited_by?.trim() || null, invited_by_id: inviter?.id || null, gender: draft.gender || null,
+    week_joined: joined, category, nc_active: true, center_id: D.center?.id || 1,
   }).select().single();
   if (error) { setError(`Not saved: ${error.message}`); return false; }
-  await supabase.from('category_history').insert({ person_id: data.id, category, since: draft.week_joined, note: 'Registered' });
-  if (draft.week_joined <= todayIso()) {
-    if (createRoll) await createRoll(draft.week_joined);
-    await supabase.from('attendance').upsert({ person_id: data.id, sunday: draft.week_joined, status: 'Present', category, active: true }, { onConflict: 'person_id,sunday' });
+  await supabase.from('category_history').insert({ person_id: data.id, category, since: joined || todayIso(), note: 'Registered' });
+  if (joined && joined <= todayIso() && draft.present !== false) {
+    if (createRoll) await createRoll(joined);
+    await supabase.from('attendance').upsert({ person_id: data.id, sunday: joined, status: 'Present', category, active: true }, { onConflict: 'person_id,sunday' });
   }
   return true;
 }
 
+const REG_GROUPS = [['New Comer', 'New comer'], ['Active Informal Member', 'Active informal member'], ['Inactive Informal Member', 'Inactive informal member'], ['Member', 'Member'], ['Leader', 'Leader'], ['Senior Leader', 'Senior leader']];
+
 export function NewPersonSheet({ D, defaultSunday, createRoll, setError, onClose, onDone }) {
-  const [f, setF] = useState({ name: '', phone: '+251', invited_by: '', week_joined: defaultSunday });
+  const [f, setF] = useState({ name: '', phone: '+251', invited_by: '', invited_by_id: null, week_joined: defaultSunday, category: 'New Comer', gender: '', present: true });
   const [busy, setBusy] = useState(false);
   const sundays = useMemo(recentSundays, []);
-  const dup = f.name.trim().length > 2 && D.people.filter((p) => p.name.toLowerCase().includes(f.name.trim().toLowerCase().split(' ')[0]));
+  const similar = f.name.trim().length > 1 ? findPeople(f.name, D.people, 5) : [];
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <Sheet title="Register a new comer" onClose={onClose}>
+    <Sheet title="Register someone" onClose={onClose}>
       <form className="form" onSubmit={async (e) => {
         e.preventDefault(); if (!f.name.trim()) return;
         setBusy(true);
         const ok = await registerPerson({ D, draft: f, createRoll, setError });
         setBusy(false); if (ok) onDone();
       }}>
-        <label>Name<input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></label>
-        {dup?.length > 0 && <p className="small muted">Similar names already on the list: {dup.slice(0, 5).map((p) => p.name).join(', ')}. Add who invited them to tell them apart.</p>}
         <div className="row2">
-          <label>Phone<input inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></label>
-          <label>Invited by<input list="people-names-2" value={f.invited_by} onChange={(e) => setF({ ...f, invited_by: e.target.value })} placeholder="Who brought them" /></label>
+          <label>Name<input autoFocus value={f.name} onChange={set('name')} required /></label>
+          <label>Sex<select value={f.gender} onChange={set('gender')}><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label>
         </div>
-        <label>First Sunday
-          <select value={f.week_joined} onChange={(e) => setF({ ...f, week_joined: e.target.value })}>
-            {sundays.slice(0, 30).map((s) => <option key={s} value={s}>{etLabel(s, true)} ({fmtGreg(s)})</option>)}
-          </select>
-        </label>
-        <datalist id="people-names-2">{D.people.map((p) => <option key={p.id} value={p.name} />)}</datalist>
-        <p className="muted small">They start as an active new comer and are marked present on their first Sunday. Full profile details can be added later, once they become a member.</p>
+        {similar.length > 0 && <p className="small muted" style={{ margin: 0 }}>Already on the list: {similar.map(({ p }) => p.name).join(', ')}. If it’s a different person, add who invited them, e.g. “Nati (eneyew)”.</p>}
+        <div className="row2">
+          <label>Phone<input inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
+          <label>Invited by<PersonInput value={f.invited_by} people={D.people} placeholder="Who brought them" onChange={(t, id) => setF({ ...f, invited_by: t, invited_by_id: id })} /></label>
+        </div>
+        <div className="row2">
+          <label>Group<select value={f.category} onChange={set('category')}>{REG_GROUPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label>First Sunday
+            <select value={f.week_joined || ''} onChange={(e) => setF({ ...f, week_joined: e.target.value || null })}>
+              {sundays.map((s) => <option key={s} value={s}>{etLabel(s, true)} ({fmtGreg(s)} {s.slice(0, 4)})</option>)}
+              <option value="">Before the records (earlier)</option>
+            </select>
+          </label>
+        </div>
+        {f.week_joined && <label className="check"><input type="checkbox" checked={f.present} onChange={(e) => setF({ ...f, present: e.target.checked })} /> Mark them present on {etLabel(f.week_joined)}</label>}
+        <p className="muted small" style={{ margin: 0 }}>New comers start active. Full profile details can be filled in on the People page.</p>
         <button className="btn lime wide" disabled={busy}>{busy ? 'Registering…' : 'Register'}</button>
       </form>
     </Sheet>

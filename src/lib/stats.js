@@ -1,13 +1,15 @@
 // Attendance rules for Gaius Gerji
 // • Every Sunday stores a snapshot of each person's group and (for new comers) active flag,
 //   so old percentages never change when someone's status changes later.
-// • Overall % counts Leaders, Members, Active Informal Members and ACTIVE new comers.
-//   Senior leaders are welcome but are not part of the % or the leaders count.
+// • Headline = TOTAL PRESENT (everyone who came).
+// • Rate only where we have a fixed list: leaders + members ("core rate"). Informal members and new comers are counted, not rated.
+// • Follow-up lists (calls) cover leaders, members, active informal members and active new comers.
 // • New comers: active from their first visit; 4 absences in a row → inactive; 3 Sundays in a row → active again.
 // • Promising new comer: ≥50% of Sundays since joining AND at least one 4-in-a-row streak.
 
 export const CATEGORIES = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'New Comer'];
-export const CORE = ['Leader', 'Member', 'Active Informal Member'];
+export const CORE = ['Leader', 'Member'];
+export const FOLLOWED = ['Leader', 'Member', 'Active Informal Member'];
 export const FOLLOW_GROUPS = ['Leader', 'Member', 'Active Informal Member', 'Active New Comer'];
 export const SHORT = {
   'Leader': 'Leaders', 'Senior Leader': 'Senior leaders', 'Member': 'Members',
@@ -23,7 +25,9 @@ export const AM = {
   'Inactive Informal Member': 'ንቁ ያልሆኑ', 'New Comer': 'አዲስ መጪዎች', 'Active New Comer': 'ንቁ አዲስ መጪዎች',
 };
 
-export const counts = (r) => r && (CORE.includes(r.category) || (r.category === 'New Comer' && r.active));
+/* followed = on the follow-up lists; inRate = part of the core rate */
+export const counts = (r) => r && (FOLLOWED.includes(r.category) || (r.category === 'New Comer' && r.active));
+export const inRate = (r) => r && CORE.includes(r.category);
 export const groupOfRow = (r) => (r.category === 'New Comer' ? (r.active ? 'Active New Comer' : 'Inactive New Comer') : r.category);
 export const pct = (v) => (v == null || Number.isNaN(v) ? '–' : `${Math.round(v * 100)}%`);
 
@@ -53,7 +57,7 @@ export function activeOn(personMarks = {}, held, s) {
   return state;
 }
 
-/* one Sunday summary */
+/* one Sunday summary: total present (everyone) and the core rate (leaders + members) */
 export function weekSummary(rows = []) {
   const byCat = {};
   for (const c of [...CATEGORIES, 'Active New Comer']) byCat[c] = { total: 0, present: 0 };
@@ -63,12 +67,13 @@ export function weekSummary(rows = []) {
     if (p) present++;
     if (byCat[r.category]) { byCat[r.category].total++; if (p) byCat[r.category].present++; }
     if (r.category === 'New Comer' && r.active) { byCat['Active New Comer'].total++; if (p) byCat['Active New Comer'].present++; }
-    if (counts(r)) { counted++; if (p) countedPresent++; }
+    if (inRate(r)) { counted++; if (p) countedPresent++; }
   }
-  const m = byCat['Member'];
+  const m = byCat['Member'], l = byCat['Leader'];
   return {
     present, counted, countedPresent, rate: counted ? countedPresent / counted : null,
-    memberRate: m.total ? m.present / m.total : null, byCat,
+    memberRate: m.total ? m.present / m.total : null, leaderRate: l.total ? l.present / l.total : null, byCat,
+    newComers: byCat['New Comer'].present, informal: byCat['Active Informal Member'].present + byCat['Inactive Informal Member'].present,
   };
 }
 
@@ -88,7 +93,7 @@ export function personFacts(p, marks = {}, held, s, semesterStart) {
   }
   const sem = upto.filter((d) => !semesterStart || d >= semesterStart);
   const semPresent = sem.filter((d) => marks[d]?.status === 'Present').length;
-  const semHeld = sem.filter((d) => marks[d] && counts(marks[d])).length || sem.length;
+  const semHeld = sem.filter((d) => marks[d]?.status).length || sem.length;
   const join = p.week_joined || mine[0];
   const since = join ? upto.filter((d) => d >= join) : [];
   const sincePresent = since.filter((d) => marks[d]?.status === 'Present').length;
@@ -109,23 +114,27 @@ const DAY = 86400000;
 const shift = (d, days) => new Date(Date.parse(d + 'T00:00:00Z') + days * DAY).toISOString().slice(0, 10);
 export const SIX_MONTHS = 182;
 
-/* Member readiness for a new comer, as of Sunday s.
-   Becoming a member takes about 6 months of steady coming, so we look at the last 6 months of meetings:
-   score = Sundays they came ÷ all Sundays held in the last 6 months (before they joined counts as missed).
-   Someone who came only 2 weeks ago therefore scores low, however faithful those 2 weeks were.
-   It also follows their own 6 months from the first visit, across semesters. */
-export function readiness(p, marks = {}, held, s, semesterStart) {
-  const from = shift(s, -SIX_MONTHS);
-  const win = held.filter((d) => d > from && d <= s);
+/* Membership readiness for a new comer, as of Sunday s – two views:
+   • since joining: Sundays they came ÷ Sundays held since their first visit (weekly follow-up; last semester doesn't matter)
+   • review: Sundays they came ÷ every Sunday held in the review period from its first Sunday (a later joiner counts the
+     weeks before joining as missed), so people who came at the very end can't outrank those who came all semester.
+   Ready = 6 months since the first visit AND at least READY_RATE since joining. Leaders still decide. */
+export const READY_RATE = 0.7;
+export function readiness(p, marks = {}, held, s, periodStart) {
   const first = p.week_joined || held.find((d) => marks[d]?.status === 'Present');
-  const present = win.filter((d) => marks[d]?.status === 'Present').length;
-  const sem = semesterStart ? held.filter((d) => d >= semesterStart && d <= s) : [];
-  const semPresent = sem.filter((d) => marks[d]?.status === 'Present').length;
   const sinceFirst = first ? held.filter((d) => d >= first && d <= s) : [];
+  const sincePresent = sinceFirst.filter((d) => marks[d]?.status === 'Present').length;
+  const period = periodStart ? held.filter((d) => d >= periodStart && d <= s) : [];
+  const periodPresent = period.filter((d) => marks[d]?.status === 'Present').length;
+  const sixEnd = first ? shift(first, SIX_MONTHS) : null;
+  const sixDone = !!first && sixEnd <= s;
+  const sinceRate = sinceFirst.length ? sincePresent / sinceFirst.length : null;
   return {
-    score: win.length ? present / win.length : null, present, possible: win.length,
-    semPresent, semHeld: sem.length, semRate: sem.length ? semPresent / sem.length : null,
-    first, weeksIn: sinceFirst.length, sixDone: !!first && first <= from, sixEnd: first ? shift(first, SIX_MONTHS) : null,
+    first, weeksIn: sinceFirst.length, sincePresent, sinceRate, sixEnd, sixDone,
+    periodPresent, periodHeld: period.length, periodRate: period.length ? periodPresent / period.length : null,
+    ready: sixDone && sinceRate != null && sinceRate >= READY_RATE,
+    // kept for older callers
+    score: sinceRate, present: sincePresent, possible: sinceFirst.length,
   };
 }
 

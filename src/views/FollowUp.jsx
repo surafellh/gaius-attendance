@@ -122,12 +122,15 @@ function Row({ x, sel, saveMark, openPerson, canMark }) {
         <span className="pname">{x.p.name}</span>
         <span className="pmeta">
           <span>{SHORT[g]}</span>
-          {x.p.responsible && <span>with {x.p.responsible}</span>}
+          {x.p.responsible && x.r.category !== 'New Comer' && <span>with {x.p.responsible}</span>}
           {x.f.consistent && x.f.thisWeek === 'Absent' && <span className="tag bad">was consistent</span>}
           {x.f.streak >= 2 && <span className="tag">{x.f.streak} weeks</span>}
           {x.r.category === 'New Comer' && <span>{pct(x.f.sinceRate)} since first visit</span>}
           <MiniDots statuses={x.dots} />
         </span>
+        {(x.p.invited_by || x.r.category === 'New Comer') && (
+          <span className="pmeta inviter">{x.p.invited_by ? <>Invited by <b>{x.p.invited_by}</b></> : 'Inviter not recorded'}{x.p.week_joined ? ` · first came ${etLabel(x.p.week_joined, true)}` : ''}{x.p.phone ? ` · ${x.p.phone}` : ''}</span>
+        )}
       </button>
       <label className="check" title="Called this week">
         <input type="checkbox" disabled={!canMark} checked={!!x.r.called} onChange={(e) => saveMark(x.p.id, sel, { called: e.target.checked })} />

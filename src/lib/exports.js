@@ -1,6 +1,6 @@
 // Reports for leaders and HQ: Excel (.xlsx) and PDF (print-ready page → "Save as PDF").
 // Reports show what leaders need – the data in the app is more complete than any report.
-import { etLabel, fmtGreg, sundaysOfMonth, monthLabel, sundaysOf, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, shortEt } from './ethiopian';
+import { etLabel, fmtGreg, sundaysOfMonth, monthLabel, sundaysOf, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, shortEt, semName } from './ethiopian';
 import { pct, readiness } from './stats';
 
 /* report groups, in order; "active" comes from that Sunday's snapshot */
@@ -22,18 +22,22 @@ function sundayStats(ctx, s, cats) {
     const g = rows.filter(test);
     return { total: g.length, present: g.filter((r) => r.status === 'Present').length };
   });
-  const total = by.reduce((n, x) => n + x.total, 0), present = by.reduce((n, x) => n + x.present, 0);
-  return { present, total, rate: total ? present / total : null, by };
+  const present = by.reduce((n, x) => n + x.present, 0);
+  // everyone who came, and the core rate (leaders + members) – the same numbers as the dashboard
+  const all = rows.filter((r) => r.status === 'Present').length;
+  const core = rows.filter((r) => r.category === 'Leader' || r.category === 'Member');
+  const corePresent = core.filter((r) => r.status === 'Present').length;
+  return { present, all, rate: core.length ? corePresent / core.length : null, by };
 }
 const held = (ctx, sundays) => sundays.filter((s) => ctx.idx.heldSet.has(s));
 
 function summaryTable(ctx, sundays, cats) {
-  const head = ['Sunday', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Rate', ...cats.map(([, l]) => l)];
+  const head = ['Sunday', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Leaders & members rate', ...cats.map(([, l]) => l)];
   const body = sundays.filter((s) => ctx.idx.heldSet.has(s) || ctx.progBy[s]).map((s) => {
     const p = ctx.progBy[s] || {};
     const st = sundayStats(ctx, s, cats);
     const on = ctx.idx.heldSet.has(s);
-    return [etLabel(s), fmtGreg(s), p.kind || '', p.topic || '', p.minister || '', on ? st.present : '', on ? pct(st.rate) : '', ...st.by.map((x) => (on ? x.present : ''))];
+    return [etLabel(s), fmtGreg(s), p.kind || '', p.topic || '', p.minister || '', on ? st.all : '', on ? pct(st.rate) : '', ...st.by.map((x) => (on ? x.present : ''))];
   });
   return { name: 'Summary', head, body };
 }
@@ -57,6 +61,17 @@ function gridTable(ctx, sundays, cats) {
   return { name: 'Attendance', head: ['S.N', 'Name', ...hs.map((s) => shortEt(s)), 'Total', '%'], marks: [2, 2 + hs.length], body };
 }
 
+/* program report only – what happened each Sunday, no numbers (e.g. for the service coordinator) */
+export function programReport(ctx, from, to, label) {
+  const sundays = Object.keys(ctx.progBy).concat(ctx.idx.held).filter((s) => s >= from && s <= to);
+  const body = [...new Set(sundays)].sort().map((s) => { const p = ctx.progBy[s] || {}; return [etLabel(s), fmtGreg(s), p.kind || '', p.topic || '', p.minister || '', p.notes || '']; });
+  return {
+    title: `Gaius ${center(ctx)} – programs, ${label}`, file: `Gaius_${center(ctx)}_programs_${label.replace(/\W+/g, '_')}`,
+    sub: `${body.filter((r) => r[2] && r[2] !== 'No meeting').length} programs`,
+    sheets: [{ name: 'Programs', head: ['Sunday', 'Date', 'Program', 'Topic', 'Teacher / minister', 'Notes'], body }],
+  };
+}
+
 export function monthlyReport(ctx, month, keys) {
   const cats = catsOf(keys);
   const sundays = sundaysOfMonth(month.year, month.month);
@@ -65,7 +80,7 @@ export function monthlyReport(ctx, month, keys) {
   return {
     title: `Gaius ${center(ctx)} – ${monthLabel(month)} attendance`,
     file: `Gaius_${center(ctx)}_${monthLabel(month).replace(' ', '_')}`,
-    sub: `${hs.length} Sundays · average ${one(avg(st.map((x) => x.present)))} present · average rate ${pct(avg(st.map((x) => x.rate).filter((v) => v != null)))} · ${cats.map(([, l]) => l).join(', ')}`,
+    sub: `${hs.length} Sundays · average ${one(avg(st.map((x) => x.all)))} present · leaders & members rate ${pct(avg(st.map((x) => x.rate).filter((v) => v != null)))}`,
     sheets: [summaryTable(ctx, sundays, cats), gridTable(ctx, sundays, cats)],
   };
 }
@@ -75,8 +90,8 @@ export function semesterReport(ctx, sem, keys) {
   const sundays = sundaysOf(sem).filter((s) => s <= ctx.today);
   const hs = held(ctx, sundays);
   const st = Object.fromEntries(hs.map((s) => [s, sundayStats(ctx, s, cats)]));
-  const avgPresent = avg(hs.map((s) => st[s].present)), avgRate = avg(hs.map((s) => st[s].rate).filter((v) => v != null));
-  const best = [...hs].sort((a, b) => st[b].present - st[a].present)[0], low = [...hs].sort((a, b) => st[a].present - st[b].present)[0];
+  const avgPresent = avg(hs.map((s) => st[s].all)), avgRate = avg(hs.map((s) => st[s].rate).filter((v) => v != null));
+  const best = [...hs].sort((a, b) => st[b].all - st[a].all)[0], low = [...hs].sort((a, b) => st[a].all - st[b].all)[0];
   const from = semesterStart(sem), to = semesterEnd(sem);
   const firstTime = ctx.D.people.filter((p) => p.week_joined && p.week_joined >= from && p.week_joined <= to).length;
   const becameMembers = ctx.D.history.filter((h) => h.category === 'Member' && h.since >= from && h.since <= to && h.note !== 'from sheet').length;
@@ -86,9 +101,9 @@ export function semesterReport(ctx, sem, keys) {
   const overview = { name: 'Overview', head: ['', ''], body: [
     ['Sundays held', hs.length],
     ['Average total present', one(avgPresent)],
-    ['Average attendance rate', pct(avgRate)],
-    ['Highest Sunday', best ? `${etLabel(best)} – ${st[best].present} present` : ''],
-    ['Lowest Sunday', low ? `${etLabel(low)} – ${st[low].present} present` : ''],
+    ['Leaders & members rate', pct(avgRate)],
+    ['Highest Sunday', best ? `${etLabel(best)} – ${st[best].all} present` : ''],
+    ['Lowest Sunday', low ? `${etLabel(low)} – ${st[low].all} present` : ''],
     ['First-time visitors', firstTime],
     ['New comers who became members', becameMembers],
     ['Sundays with a program recorded', `${progs} of ${hs.length}`],
@@ -100,16 +115,16 @@ export function semesterReport(ctx, sem, keys) {
   }) };
   const months = [];
   for (const s of hs) { const e = toEthiopian(s); let m = months[months.length - 1]; if (!m || m.month !== e.month) { m = { month: e.month, list: [] }; months.push(m); } m.list.push(s); }
-  const byMonth = { name: 'By month', head: ['Month', 'Sundays', 'Average present', 'Average rate', ...cats.map(([, l]) => l)], body: months.map((m) => [
-    ET_MONTHS[m.month], m.list.length, one(avg(m.list.map((s) => st[s].present))), pct(avg(m.list.map((s) => st[s].rate).filter((v) => v != null))),
+  const byMonth = { name: 'By month', head: ['Month', 'Sundays', 'Average total present', 'Leaders & members rate', ...cats.map(([, l]) => l)], body: months.map((m) => [
+    ET_MONTHS[m.month], m.list.length, one(avg(m.list.map((s) => st[s].all))), pct(avg(m.list.map((s) => st[s].rate).filter((v) => v != null))),
     ...cats.map((_, i) => one(avg(m.list.map((s) => st[s].by[i].present))))]) };
-  const programs = { name: 'Programs', head: ['Sunday', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'Rate'],
+  const programs = { name: 'Programs', head: ['Sunday', 'Program', 'Topic', 'Teacher / minister', 'Total present', 'L+M rate'],
     body: sundays.filter((s) => ctx.idx.heldSet.has(s) || ctx.progBy[s]).map((s) => {
       const p = ctx.progBy[s] || {};
-      return [etLabel(s), p.kind || '', p.topic || '', p.minister || '', st[s]?.present ?? '', st[s] ? pct(st[s].rate) : ''];
+      return [etLabel(s), p.kind || '', p.topic || '', p.minister || '', st[s]?.all ?? '', st[s] ? pct(st[s].rate) : ''];
     }) };
   return {
-    title: `Gaius ${center(ctx)} – ${sem} semester summary`, file: `Gaius_${center(ctx)}_${sem.replace(' ', '_')}_summary`,
+    title: `Gaius ${center(ctx)} – ${semName(sem)} summary`, file: `Gaius_${center(ctx)}_${sem.replace(' ', '_')}_summary`,
     sub: `${etLabel(from, true)} – ${etLabel(last || to, true)} · ${cats.map(([, l]) => l).join(', ')}`,
     sheets: [overview, byCat, byMonth, programs],
   };
@@ -181,7 +196,7 @@ export function toPdf(rep) {
     const tr = sh.body.map((r) => (Array.isArray(r)
       ? `<tr>${r.map((v, i) => (isMark(i) ? `<td class="mk ${v}">${v === 'P' ? '✓' : v === 'A' ? '✕' : ''}</td>` : `<td>${esc(v)}</td>`)).join('')}</tr>`
       : `<tr class="grp"><td colspan="${sh.head.length}">${esc(r.group)}</td></tr>`)).join('');
-    return `<h2>${esc(sh.name)}</h2><table class="${sh.marks ? 'grid' : ''} ${hasHead ? '' : 'kv'}">${th}<tbody>${tr || `<tr><td>Nobody in this group.</td></tr>`}</tbody></table>`;
+    return `<h2>${esc(sh.name)} <button class="cp" onclick="cp(this)">Copy table</button></h2><textarea hidden>${esc(tableText(sh))}</textarea><table class="${sh.marks ? 'grid' : ''} ${hasHead ? '' : 'kv'}">${th}<tbody>${tr || `<tr><td>Nobody in this group.</td></tr>`}</tbody></table>`;
   };
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(rep.file)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;700&family=Manrope:wght@400;700;800&display=swap" rel="stylesheet">
@@ -196,10 +211,16 @@ th.mk{width:30px;min-width:30px;max-width:30px;padding:2px 1px;text-align:center
 td.mk{width:30px;max-width:30px;padding:2px 0;text-align:center;font-weight:700}td.mk.P{color:#fff;background:#23964f!important}td.mk.A{color:#d9533c;background:#fce9e4!important}
 tr.grp td{background:#1a2e14!important;color:#fff;font-weight:800;font-size:10px;padding:4px 8px}
 tr{break-inside:avoid}thead{display:table-header-group}.foot{font-size:9px;color:#5d6a57;margin-top:10px}.bar{position:sticky;top:0;background:#fff;padding:8px 0;display:flex;gap:8px}
-.bar button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;background:#8dc63f;cursor:pointer}@media print{.bar{display:none}body{padding:0}}</style></head>
+h2 .cp{font:inherit;font-size:10px;font-weight:700;border:1px solid #c9d9b6;background:#fff;border-radius:8px;padding:2px 8px;margin-left:8px;cursor:pointer}@media print{h2 .cp{display:none}}.bar button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;background:#8dc63f;cursor:pointer}@media print{.bar{display:none}body{padding:0}}</style></head>
 <body><div class="bar"><button onclick="print()">Save as PDF / Print</button><button onclick="close()" style="background:#eef2e8">Close</button></div>
 <header><h1>${esc(rep.title)}</h1><div class="sub">${esc(rep.sub)}</div></header><div class="band"></div>${rep.sheets.map(table).join('')}
 <p class="foot">Generated ${new Date().toLocaleString('en-GB')} · Gaius attendance app</p>
-<script>document.fonts.ready.then(()=>setTimeout(()=>print(),300))</script></body></html>`);
+<script>function cp(b){navigator.clipboard.writeText(b.parentNode.nextElementSibling.value).then(()=>{b.textContent='Copied ✓'})}</script></body></html>`);
   w.document.close();
+}
+
+/* tab-separated text: pastes straight into Excel, Google Sheets or a Telegram message */
+export function tableText(sh) {
+  const rows = [sh.head, ...sh.body.map((r) => (Array.isArray(r) ? r.map((v) => (v === 'P' ? '✓' : v === 'A' ? '✕' : v)) : [r.group]))];
+  return rows.map((r) => r.map((v) => String(v ?? '').replace(/\t|\n/g, ' ')).join('\t')).join('\n');
 }

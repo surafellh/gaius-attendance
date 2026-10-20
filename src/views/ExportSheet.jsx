@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { monthOf, monthLabel, semesterOf, SEMESTERS, semesterStart } from '../lib/ethiopian';
-import { monthlyReport, semesterReport, profilesReport, toExcel, toPdf, REPORT_CATS, PROFILE_TABLES } from '../lib/exports';
+import { monthOf, monthLabel, semesterOf, SEMESTERS, semesterStart, semesterEnd, semName, monthRange } from '../lib/ethiopian';
+import { monthlyReport, semesterReport, profilesReport, programReport, tableText, toExcel, toPdf, REPORT_CATS, PROFILE_TABLES } from '../lib/exports';
 import { Sheet, Icon } from './common';
 
 export default function ExportSheet({ ctx, onClose, initial = {} }) {
@@ -15,17 +15,24 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
   const [month, setMonth] = useState(() => { const m = initial.month || monthOf(ctx.latest); return `${m.year}-${m.month}`; });
   const [sem, setSem] = useState(initial.sem || semesterOf(ctx.latest));
   const [busy, setBusy] = useState(false);
+  const [span, setSpan] = useState('month');
+  const [copied, setCopied] = useState('');
   const [cats, setCats] = useState(() => REPORT_CATS.map(([k]) => k));
   const [tables, setTables] = useState(() => PROFILE_TABLES.map(([k]) => k));
   const toggle = (set, k) => set((xs) => (xs.includes(k) ? xs.filter((x) => x !== k) : [...xs, k]));
-  const chosen = kind === 'profiles' ? tables : cats;
+  const chosen = kind === 'profiles' ? tables : kind === 'programs' ? ['x'] : cats;
   const build = () => {
     if (kind === 'month') { const [y, m] = month.split('-').map(Number); return monthlyReport(ctx, { year: y, month: m }, cats); }
     if (kind === 'semester') return semesterReport(ctx, sem, cats);
+    if (kind === 'programs') {
+      if (span === 'month') { const [y, m] = month.split('-').map(Number); const [a, b] = monthRange({ year: y, month: m }); return programReport(ctx, a, b, monthLabel({ year: y, month: m })); }
+      return programReport(ctx, semesterStart(sem), semesterEnd(sem), semName(sem));
+    }
     return profilesReport(ctx, tables);
   };
   const KINDS = [['month', 'Monthly attendance', 'Each Sunday’s program and numbers, plus who came each Sunday'],
     ['semester', '6-month (semester) summary', 'Key numbers, each group, month by month, and the programs'],
+    ['programs', 'Programs only', 'What each Sunday’s program was – no attendance numbers (e.g. for the service coordinator)'],
     ...(perm.profiles ? [['profiles', 'Member profiles', 'A table per group in the HQ profile format']] : [])];
   return (
     <Sheet title="Export a report" onClose={onClose}>
@@ -37,19 +44,25 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
             </button>
           ))}
         </div>
-        {kind === 'month' && <label>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}</select></label>}
-        {kind === 'semester' && <label>Semester<select value={sem} onChange={(e) => setSem(e.target.value)}>{sems.map((s) => <option key={s}>{s}</option>)}</select></label>}
-        <fieldset className="export-cats">
+        {kind === 'programs' && <div className="seg"><button type="button" className={span === 'month' ? 'on' : ''} onClick={() => setSpan('month')}>A month</button><button type="button" className={span === 'sem' ? 'on' : ''} onClick={() => setSpan('sem')}>A semester</button></div>}
+        {(kind === 'month' || (kind === 'programs' && span === 'month')) && <label>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}</select></label>}
+        {(kind === 'semester' || (kind === 'programs' && span === 'sem')) && <label>Semester<select value={sem} onChange={(e) => setSem(e.target.value)}>{sems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select></label>}
+        {kind !== 'programs' && <fieldset className="export-cats">
           <legend>{kind === 'profiles' ? 'Tables to include' : 'Groups to include'}</legend>
           {(kind === 'profiles' ? PROFILE_TABLES : REPORT_CATS).map(([k, l]) => (
             <label key={k} className="check"><input type="checkbox" checked={chosen.includes(k)} onChange={() => toggle(kind === 'profiles' ? setTables : setCats, k)} /> {l}</label>
           ))}
-        </fieldset>
+        </fieldset>}
         {kind === 'profiles' && <p className="small muted" style={{ margin: 0 }}>Includes phone numbers – share it only with the leaders and HQ.</p>}
         <div className="row2">
           <button type="button" className="btn lime" disabled={busy || !chosen.length} onClick={async () => { setBusy(true); try { await toExcel(build()); } finally { setBusy(false); } }}><Icon.grid width="18" height="18" /> Excel</button>
           <button type="button" className="btn ghost" disabled={!chosen.length} onClick={() => toPdf(build())}><Icon.book width="18" height="18" /> PDF</button>
         </div>
+        <button type="button" className="btn ghost" disabled={kind !== 'programs' && !chosen.length} onClick={async () => {
+          const rep = build(); const sh = rep.sheets[0];
+          try { await navigator.clipboard.writeText(tableText(sh)); setCopied(`Copied “${sh.name}” – paste it into Excel, Sheets or Telegram.`); } catch { setCopied('Copy was blocked by the browser – use the PDF page’s Copy table button.'); }
+        }}><Icon.copy width="18" height="18" /> Copy table</button>
+        {copied && <p className="banner ok" style={{ margin: 0 }}>{copied}</p>}
         <p className="muted tiny" style={{ margin: 0 }}>PDF opens a print-ready page – choose “Save as PDF”. Amharic text stays intact.</p>
       </div>
     </Sheet>

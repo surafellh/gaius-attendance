@@ -133,3 +133,11 @@ export function nextWeekday(wd, from = todayIso()) {
   return addDays(from, (wd - weekdayOf(from) + 7) % 7);
 }
 export const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
+
+// "Meskerem 2019" is stored internally; people see "Semester 1 · 2019" (Meskerem–Yekatit) / "Semester 2 · 2019" (Megabit–Pagume)
+export const semNo = (sem) => (sem.startsWith('Megabit') ? 2 : 1);
+export const semYear = (sem) => Number(sem.split(' ')[1]);
+export const semName = (sem) => `Semester ${semNo(sem)} · ${semYear(sem)}`;
+export const semRange = (sem) => (semNo(sem) === 1 ? 'Meskerem – Yekatit' : 'Megabit – Pagume');
+export const semKey = (no, year) => `${no === 2 ? 'Megabit' : 'Meskerem'} ${year}`;
+export const yearRange = (y) => [iso(etNewYear(y)), iso(etNewYear(y + 1) - DAY)];

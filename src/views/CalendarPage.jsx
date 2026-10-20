@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS, ET_MONTHS_AM, toEthiopian, addDays, weekdayOf,
-  WEEKDAYS, sundaysOf, semesterOf, SEMESTERS, semesterStart } from '../lib/ethiopian';
+  WEEKDAYS, sundaysOf, semesterOf, SEMESTERS, semesterStart, semName } from '../lib/ethiopian';
 import { parseEvents, parseReport } from '../lib/report';
 import { Icon, Sheet } from './common';
 
@@ -245,7 +245,7 @@ function Plan({ D, latest, today, perm, progBy, reload, setError }) {
       <div className="month-bar">
         <button className="arrow" disabled={semIdx <= 0} onClick={() => setSem(SEMESTERS[semIdx - 1])} aria-label="Previous semester"><Icon.left /></button>
         <div className="current">
-          <span className="w-main">{sem} semester</span>
+          <span className="w-main">{semName(sem)}</span>
           <span className="w-sub">{fmtGreg(semesterStart(sem))} · {sundays.length} Sundays · {planned.length ? `${asPlanned} of ${planned.length} planned Sundays taught as planned` : 'no plan entered yet'}</span>
         </div>
         <button className="arrow" disabled={semIdx >= SEMESTERS.length - 1} onClick={() => setSem(SEMESTERS[semIdx + 1])} aria-label="Next semester"><Icon.right /></button>

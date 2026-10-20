@@ -1,176 +1,130 @@
 import { useMemo, useState } from 'react';
-import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterStart, semesterEnd, semesterOf, SEMESTERS, monthLabel } from '../lib/ethiopian';
-import { SHORT, pct, personFacts, counts, readiness } from '../lib/stats';
-import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon } from './common';
+import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterOf, semNo, semYear } from '../lib/ethiopian';
+import { pct, counts, readiness, READY_RATE } from '../lib/stats';
+import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon, PeriodPicker, periodOf } from './common';
 import { StackedBars, RateLines } from './Charts';
 import { meetingInfo, whenText } from './Meeting';
 
-const BAR_KEYS = ['Leader', 'Senior Leader', 'Member', 'Active Informal Member', 'Inactive Informal Member', 'Active New Comer', 'Inactive New Comer'];
-const BAR_LABELS = { ...SHORT, 'Active New Comer': 'New comers (active)', 'Inactive New Comer': 'New comers (inactive)' };
-const GROUP_ROWS = [
-  ['Leader', 'Leaders'], ['Member', 'Members'], ['Active Informal Member', 'Active informal'],
-  ['Active New Comer', 'Active new comers'],
-];
-const monthKey = (s) => { const e = toEthiopian(s); return `${e.year}-${String(e.month).padStart(2, '0')}`; };
+/* bars: everyone who came, by group (new comers and informal members each as one group) */
+const BAR_KEYS = ['Leader', 'Senior Leader', 'Member', 'Informal', 'New Comer'];
+const BAR_LABELS = { 'Leader': 'Leaders', 'Senior Leader': 'Senior leaders', 'Member': 'Members', 'Informal': 'Informal members', 'New Comer': 'New comers' };
+const barKey = (r) => (r.category === 'Active Informal Member' || r.category === 'Inactive Informal Member' ? 'Informal' : r.category);
+const RANK_GROUPS = [['Member', 'Members'], ['Leader', 'Leaders'], ['Active Informal Member', 'Informal members'], ['New Comer', 'New comers']];
 
-export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today, openExport }) {
-  const [range, setRange] = useState('semester');
+export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today, perm }) {
+  const sel = week || latest;
+  const [period, setPeriod] = useState(() => ({ kind: 'sem', no: semNo(semesterOf(sel)), year: semYear(semesterOf(sel)) }));
+  const P = periodOf(period);
   const [hidden, setHidden] = useState(() => new Set());
   const [rankGroup, setRankGroup] = useState('Member');
   const [rankDir, setRankDir] = useState('top');
-  const [rankPeriod, setRankPeriod] = useState('semester');
-  const [rankMonth, setRankMonth] = useState(null);
-  const sel = week || latest;
+  const [ncView, setNcView] = useState('since');
+  const [expanded, setExpanded] = useState(false);
+
   const heldIdx = idx.held.indexOf(sel);
   const prevS = heldIdx > 0 ? idx.held[heldIdx - 1] : null;
   const cur = summaries[sel];
   const prev = prevS ? summaries[prevS] : null;
-  const sem = semesterOf(sel);
-  const semStart = semesterStart(sem);
-  const etYear = toEthiopian(sel).year;
-  const semOptions = SEMESTERS.filter((x) => semesterStart(x) <= latest).reverse();
-  const pickSemester = (x) => {
-    if (x === semesterOf(latest)) return setWeek(null);
-    const last = idx.held.filter((s) => s >= semesterStart(x) && s <= semesterEnd(x)).pop();
-    if (last) setWeek(last);
-  };
+  const years = useMemo(() => [...new Set(idx.held.map((s) => toEthiopian(s).year))].sort((a, b) => b - a), [idx.held]);
 
-  const rangeWeeks = useMemo(() => {
-    const upto = idx.held.filter((s) => s <= sel);
-    if (range === 'semester') return upto.filter((s) => s >= semStart);
-    if (range === 'year') return upto.filter((s) => toEthiopian(s).year === etYear);
-    if (range === 'last12') { const from = new Date(Date.parse(sel) - 364 * 864e5).toISOString().slice(0, 10); return upto.filter((s) => s > from); }
-    return upto;
-  }, [idx.held, sel, range, semStart, etYear]);
-  const RANGES = [['semester', sem], ['year', `Year ${etYear}`], ['last12', 'Last 12 months'], ['all', 'All']];
+  const weeks = useMemo(() => idx.held.filter((s) => s >= P.from && s <= P.to), [idx.held, P.from, P.to]);
+  const avgPresent = weeks.length ? weeks.reduce((n, s) => n + summaries[s].present, 0) / weeks.length : null;
+  const coreRates = weeks.map((s) => summaries[s].rate).filter((v) => v != null);
+  const avgCore = coreRates.length ? coreRates.reduce((a, b) => a + b, 0) / coreRates.length : null;
+  const pick = (s) => setWeek(s === latest ? null : s);
 
-  const avgRate = rangeWeeks.length ? rangeWeeks.reduce((n, s) => n + (summaries[s].rate || 0), 0) / rangeWeeks.length : null;
-  const avgPresent = rangeWeeks.length ? rangeWeeks.reduce((n, s) => n + summaries[s].present, 0) / rangeWeeks.length : null;
-
-  const rateWeeks = rangeWeeks.map((s) => ({
-    sunday: s, note: noteOf(progBy[s]),
-    values: { rate: summaries[s].rate, members: summaries[s].memberRate, leaders: lr(summaries[s]) },
-  }));
-  const barWeeks = rangeWeeks.map((s) => {
-    const rows = idx.bySunday[s] || [];
+  const rateWeeks = weeks.map((s) => ({ sunday: s, note: noteOf(progBy[s]), values: { rate: summaries[s].rate, members: summaries[s].memberRate, leaders: summaries[s].leaderRate } }));
+  const barWeeks = weeks.map((s) => {
     const v = {};
-    for (const r of rows) if (r.status === 'Present') {
-      const k = r.category === 'New Comer' ? (r.active ? 'Active New Comer' : 'Inactive New Comer') : r.category;
-      v[k] = (v[k] || 0) + 1;
-    }
+    for (const r of idx.bySunday[s] || []) if (r.status === 'Present') { const k = barKey(r); v[k] = (v[k] || 0) + 1; }
     return { sunday: s, values: v, note: noteOf(progBy[s]) };
   });
 
-  // follow-up numbers for the selected Sunday
   const rows = idx.bySunday[sel] || [];
-  const followRows = rows.filter((r) => counts(r) && personBy[r.person_id]);
-  const dropped = followRows.filter((r) => r.status === 'Absent' && idx.byPerson[r.person_id]?.[prevS]?.status === 'Present').length;
+  const dropped = rows.filter((r) => counts(r) && personBy[r.person_id] && r.status === 'Absent' && idx.byPerson[r.person_id]?.[prevS]?.status === 'Present').length;
   const firstTimers = D.people.filter((p) => p.week_joined === sel).length;
-  const ncPresent = rows.filter((r) => r.category === 'New Comer' && r.status === 'Present').length;
-  const leaders = cur ? { p: cur.byCat['Leader'].present, t: cur.byCat['Leader'].total } : null;
 
-  // new comer pipeline this semester
+  // new comers in the period
   const pipeline = useMemo(() => {
-    const semHeld = idx.held.filter((s) => s >= semStart && s <= sel);
-    const ncs = D.people.filter((p) => {
-      const marks = idx.byPerson[p.id] || {};
-      return semHeld.some((s) => marks[s]?.category === 'New Comer' && marks[s]?.status === 'Present');
-    });
-    const firstThisSem = D.people.filter((p) => p.week_joined && p.week_joined >= semStart && p.week_joined <= sel);
-    const facts = ncs.map((p) => ({ p, f: personFacts(p, idx.byPerson[p.id], idx.held, sel, semStart) }));
-    const cameBack = firstThisSem.filter((p) => semHeld.filter((s) => s > p.week_joined && idx.byPerson[p.id]?.[s]?.status === 'Present').length > 0);
-    const activeNow = (idx.bySunday[sel] || []).filter((r) => r.category === 'New Comer' && r.active).length;
-    const promising = facts.filter(({ p, f }) => p.category === 'New Comer' && f.promising);
-    const becameMembers = D.history.filter((h) => h.category === 'Member' && h.since >= semStart && h.note !== 'from sheet').length;
-    return { ncs: ncs.length, first: firstThisSem.length, cameBack: cameBack.length, activeNow, promising, becameMembers };
-  }, [idx, D.people, D.history, semStart, sel]);
+    const inP = (d) => d && d >= P.from && d <= P.to;
+    const first = D.people.filter((p) => inP(p.week_joined) && p.week_joined <= sel);
+    const cameBack = first.filter((p) => weeks.some((s) => s > p.week_joined && idx.byPerson[p.id]?.[s]?.status === 'Present'));
+    const ncRows = rows.filter((r) => r.category === 'New Comer' && r.active);
+    const ready = ncRows.map((r) => personBy[r.person_id]).filter(Boolean).filter((p) => readiness(p, idx.byPerson[p.id], idx.held, sel).ready);
+    const becameMembers = D.history.filter((h) => h.category === 'Member' && inP(h.since) && h.note !== 'from sheet').length;
+    return { first: first.length, cameBack: cameBack.length, activeNow: ncRows.length, ready, becameMembers };
+  }, [idx, D.people, D.history, P.from, P.to, sel, weeks, rows, personBy]);
 
-  // monthly averages in range
+  // month by month inside the period
   const months = useMemo(() => {
     const m = new Map();
-    for (const s of rangeWeeks) {
-      const e = toEthiopian(s); const k = `${e.year}-${String(e.month).padStart(2, '0')}`;
-      if (!m.has(k)) m.set(k, { k, name: ET_MONTHS[e.month], am: ET_MONTHS_AM[e.month], year: e.year, list: [] });
-      m.get(k).list.push(s);
-    }
-    return [...m.values()].map((x) => ({
-      ...x,
-      present: x.list.reduce((n, s) => n + summaries[s].present, 0) / x.list.length,
-      rate: x.list.reduce((n, s) => n + (summaries[s].rate || 0), 0) / x.list.length,
-      members: x.list.reduce((n, s) => n + (summaries[s].memberRate || 0), 0) / x.list.length,
-    }));
-  }, [rangeWeeks, summaries]);
+    for (const s of weeks) { const e = toEthiopian(s); const k = `${e.year}-${e.month}`; if (!m.has(k)) m.set(k, { k, name: ET_MONTHS[e.month], am: ET_MONTHS_AM[e.month], list: [] }); m.get(k).list.push(s); }
+    return [...m.values()].map((x) => {
+      const r = x.list.map((s) => summaries[s].rate).filter((v) => v != null);
+      return { ...x, present: x.list.reduce((n, s) => n + summaries[s].present, 0) / x.list.length, rate: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null };
+    });
+  }, [weeks, summaries]);
 
-  // ranking: whole semester, or one month
-  const monthsHeld = useMemo(() => {
-    const m = new Map();
-    for (const d of idx.held.filter((x) => x <= latest)) { const k = monthKey(d); if (!m.has(k)) m.set(k, []); m.get(k).push(d); }
-    return [...m.entries()].reverse();
-  }, [idx.held, latest]);
-  const mKey = rankMonth || monthKey(sel);
-  const monthDays = monthsHeld.find(([k]) => k === mKey)?.[1] || [];
-  const isNC = rankGroup === 'Active New Comer';
+  // ranking over the period
+  const isNC = rankGroup === 'New Comer';
   const ranked = useMemo(() => {
-    const at = rankPeriod === 'month' ? monthDays[monthDays.length - 1] : sel;
-    if (!at) return [];
-    const inGroup = (r) => (isNC ? r.category === 'New Comer' && r.active : r.category === rankGroup);
-    const list = (idx.bySunday[at] || []).filter((r) => personBy[r.person_id] && inGroup(r));
-    return list.map((r) => {
+    const last = weeks.filter((s) => s <= sel).pop() || weeks[weeks.length - 1];
+    if (!last) return { list: [], tooNew: [] };
+    const list = (idx.bySunday[last] || []).filter((r) => personBy[r.person_id] && (isNC ? r.category === 'New Comer' && r.active : r.category === rankGroup)).map((r) => {
       const p = personBy[r.person_id];
       const marks = idx.byPerson[p.id] || {};
-      if (rankPeriod === 'month') {
-        const present = monthDays.filter((d) => marks[d]?.status === 'Present').length;
-        return { p, score: monthDays.length ? present / monthDays.length : null, sub: `${present} of ${monthDays.length} Sundays in ${ET_MONTHS[Number(mKey.slice(5))]}` };
-      }
       if (isNC) {
-        const x = readiness(p, marks, idx.held, sel, semStart);
-        const sub = `${x.present} of the last ${x.possible} Sundays · ${x.sixDone ? '6 months reached' : `week ${x.weeksIn} since ${x.first ? etLabel(x.first) : 'first visit'} · 6 months on ${x.sixEnd ? etLabel(x.sixEnd, true) : '—'}`}`;
-        return { p, score: x.score, sub, six: x.sixDone, semRate: x.semRate };
+        const x = readiness(p, marks, idx.held, last, P.from);
+        const score = ncView === 'since' ? x.sinceRate : x.periodRate;
+        const sub = ncView === 'since'
+          ? `${x.sincePresent} of ${x.weeksIn} Sundays since ${x.first ? etLabel(x.first) : 'first visit'} · ${x.sixDone ? '6 months reached' : `6 months on ${etLabel(x.sixEnd, true)}`}`
+          : `${x.periodPresent} of ${x.periodHeld} Sundays from ${etLabel(P.from)}${x.first > P.from ? ` (joined ${etLabel(x.first)})` : ''}`;
+        return { p, score, sub, ready: x.ready, six: x.sixDone, weeks: x.weeksIn };
       }
-      const f = personFacts(p, marks, idx.held, sel, semStart);
-      return { p, score: f.semRate, sub: `${f.semPresent} Sundays this semester` };
-    }).filter((x) => x.score != null)
-      .sort((a, b) => (rankDir === 'top' ? b.score - a.score : a.score - b.score) || a.p.name.localeCompare(b.p.name))
-      .slice(0, 8);
-  }, [idx, sel, personBy, rankGroup, rankDir, semStart, rankPeriod, mKey, isNC]); // eslint-disable-line
+      const held = weeks.filter((s) => s <= last && marks[s]?.status);
+      const present = held.filter((s) => marks[s].status === 'Present').length;
+      return { p, score: held.length ? present / held.length : null, sub: `${present} of ${held.length} Sundays · ${P.label}` };
+    }).filter((x) => x.score != null);
+    const tooNew = isNC && ncView === 'since' ? list.filter((x) => x.weeks < 4) : [];
+    const main = list.filter((x) => !tooNew.includes(x))
+      .sort((a, b) => (rankDir === 'top' ? b.score - a.score : a.score - b.score) || (b.weeks || 0) - (a.weeks || 0) || a.p.name.localeCompare(b.p.name));
+    return { list: main, tooNew };
+  }, [idx, sel, weeks, personBy, rankGroup, rankDir, isNC, ncView, P.from, P.label]);
 
-  // programs inside the chosen range (including Sundays with no meeting)
+  // programs inside the period
   const progWeeks = useMemo(() => {
-    const from = rangeWeeks[0] || sel;
-    const extra = Object.keys(progBy).filter((d) => d >= from && d <= sel && !idx.heldSet.has(d));
-    return [...new Set([...rangeWeeks, ...extra])].sort().reverse();
-  }, [rangeWeeks, progBy, sel, idx.heldSet]);
+    const extra = Object.keys(progBy).filter((d) => d >= P.from && d <= P.to && d <= today && !idx.heldSet.has(d));
+    return [...new Set([...weeks, ...extra])].sort().reverse();
+  }, [weeks, progBy, P.from, P.to, idx.heldSet, today]);
 
   if (!cur) return <div className="page"><div className="card empty">No attendance recorded yet. Start on the Attendance page.</div></div>;
   const toggle = (k) => setHidden((h) => { const n = new Set(h); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const pick = (s) => setWeek(s === latest ? null : s);
+  const leaders = cur.byCat.Leader, members = cur.byCat.Member;
+  const shown = expanded ? ranked.list : ranked.list.slice(0, 8);
 
   return (
     <div className="page">
-      <div className="dash-top">
-        <WeekPicker value={week} latest={latest} onChange={setWeek} held={idx.held} info={calInfo} allowLatest />
-        <label className="sem-select">
-          <span>Semester</span>
-          <select value={sem} onChange={(e) => pickSemester(e.target.value)}>
-            {semOptions.map((x) => <option key={x} value={x} disabled={!idx.held.some((s) => s >= semesterStart(x) && s <= semesterEnd(x))}>{x}</option>)}
-          </select>
-        </label>
-        <button className="btn ghost export-btn" onClick={() => openExport({ kind: 'semester', sem })}><Icon.book width="18" height="18" /> Export</button>
-      </div>
+      <section className="dash-bar">
+        <div className="dash-bar-left">
+          <WeekPicker value={week} latest={latest} onChange={setWeek} held={idx.held} info={calInfo} allowLatest />
+          {week && <button className="chip-back" onClick={() => setWeek(null)}>Viewing {etLabel(sel)} · back to latest <Icon.x width="14" height="14" /></button>}
+        </div>
+        <PeriodPicker value={period} onChange={(v) => { setPeriod(v); setExpanded(false); }} years={years} />
+      </section>
 
-      <Reminders D={D} today={today} go={go} />
+      {perm.mark && <Reminders D={D} today={today} go={go} />}
 
       <section className="kpis" aria-label={`Summary for ${etLabel(sel, true)}`}>
         <div className="kpi hero">
-          <span className="kpi-label">Attendance rate</span>
-          <span className="kpi-val">{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></span>
-          <span className="kpi-foot"><Delta d={prev ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</span>
+          <span className="kpi-label">Total present · {etLabel(sel)}</span>
+          <span className="kpi-val">{cur.present}</span>
+          <span className="kpi-foot"><Delta d={prev ? cur.present - prev.present : null} /> vs last Sunday</span>
         </div>
-        <Kpi label="People present" val={cur.present} foot={<><Delta d={prev ? cur.present - prev.present : null} /> vs last Sunday</>} />
-        <Kpi label="Members present" color={CAT_COLOR.Member} val={<>{cur.byCat.Member.present}<small>/{cur.byCat.Member.total}</small></>} foot={`${pct(cur.memberRate)} of members`} />
-        <Kpi label="Leaders present" color={CAT_COLOR.Leader} val={<>{leaders.p}<small>/{leaders.t}</small></>} foot={`${pct(leaders.t ? leaders.p / leaders.t : null)} of leaders`} />
-        <Kpi label="New comers" color={CAT_COLOR['New Comer']} val={ncPresent} foot={`${firstTimers} first time · ${cur.byCat['Active New Comer'].total} active`} />
-        <button className="kpi" onClick={() => go('follow')} style={{ cursor: 'pointer' }}>
+        <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={<><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</>} />
+        <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />
+        <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />
+        <Kpi label="Informal & new comers" color={CAT_COLOR['New Comer']} val={cur.informal + cur.newComers} foot={`${cur.informal} informal · ${cur.newComers} new comers · ${firstTimers} first time`} />
+        <button className="kpi" onClick={() => go('calls')} style={{ cursor: 'pointer' }}>
           <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
           <span className="kpi-val">{dropped}</span>
           <span className="kpi-foot">came last week, missed this one ›</span>
@@ -181,33 +135,11 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <section className="card span2">
           <div className="card-head">
             <div>
-              <div className="card-title">Attendance rate</div>
-              <div className="card-sub">Share of the people we expect (leaders, members, active informal and active new comers) who came. Average {pct(avgRate)} over {rangeWeeks.length} Sundays.</div>
-            </div>
-            <div className="seg">
-              {RANGES.map(([k, l]) => <button key={k} className={range === k ? 'on' : ''} onClick={() => setRange(k)}>{l}</button>)}
+              <div className="card-title">Who came each Sunday · {P.label}</div>
+              <div className="card-sub">Average {avgPresent != null ? avgPresent.toFixed(1) : '–'} people over {weeks.length} Sundays. Tap a bar to see that Sunday; tap a group to hide it.</div>
             </div>
           </div>
-          <RateLines weeks={rateWeeks} selected={sel} onSelect={pick} series={[
-            { key: 'rate', label: 'Overall', color: 'var(--lime-strong)', width: 3 },
-            { key: 'members', label: 'Members', color: 'var(--c-member)' },
-            { key: 'leaders', label: 'Leaders', color: 'var(--c-leader)', dash: '5 4' },
-          ]} />
-          <div className="legend">
-            <span className="lg"><i className="ln" style={{ background: 'var(--lime-strong)' }} />Overall</span>
-            <span className="lg"><i className="ln" style={{ background: 'var(--c-member)' }} />Members</span>
-            <span className="lg"><i className="ln" style={{ background: 'var(--c-leader)' }} />Leaders</span>
-          </div>
-        </section>
-
-        <section className="card span2">
-          <div className="card-head">
-            <div>
-              <div className="card-title">Who came each Sunday</div>
-              <div className="card-sub">Average {avgPresent?.toFixed(1)} people. Tap a bar to open that Sunday; tap a group below to hide it.</div>
-            </div>
-          </div>
-          <StackedBars weeks={barWeeks} keys={BAR_KEYS} labels={BAR_LABELS} hidden={hidden} selected={sel} onSelect={pick} />
+          {weeks.length ? <StackedBars weeks={barWeeks} keys={BAR_KEYS} labels={BAR_LABELS} hidden={hidden} selected={sel} onSelect={pick} /> : <p className="muted small">No Sundays recorded in this period.</p>}
           <div className="legend">
             {BAR_KEYS.map((k) => (
               <button key={k} className={hidden.has(k) ? 'off' : ''} onClick={() => toggle(k)} aria-pressed={!hidden.has(k)}>
@@ -217,51 +149,53 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </div>
         </section>
 
-        <section className="card">
+        <section className="card span2">
           <div className="card-head">
             <div>
-              <div className="card-title">Groups on {etLabel(sel)}</div>
-              <div className="card-sub">Present compared with the 4 Sundays before.</div>
+              <div className="card-title">Leaders & members rate</div>
+              <div className="card-sub">The groups with a fixed list. Average {pct(avgCore)} in {P.label}. Informal members and new comers are counted above, not rated.</div>
             </div>
           </div>
+          {weeks.length > 0 && <RateLines weeks={rateWeeks} selected={sel} onSelect={pick} series={[
+            { key: 'rate', label: 'Leaders & members', color: 'var(--lime-strong)', width: 3 },
+            { key: 'members', label: 'Members', color: 'var(--c-member)' },
+            { key: 'leaders', label: 'Leaders', color: 'var(--c-leader)', dash: '5 4' },
+          ]} />}
+          <div className="legend">
+            <span className="lg"><i className="ln" style={{ background: 'var(--lime-strong)' }} />Leaders & members</span>
+            <span className="lg"><i className="ln" style={{ background: 'var(--c-member)' }} />Members</span>
+            <span className="lg"><i className="ln" style={{ background: 'var(--c-leader)' }} />Leaders</span>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head"><div><div className="card-title">Groups on {etLabel(sel)}</div><div className="card-sub">Compared with the 4 Sundays before.</div></div></div>
           <table className="gtable">
-            <thead><tr><th>Group</th><th>Present</th><th>Rate</th><th>4-wk avg</th></tr></thead>
+            <thead><tr><th>Group</th><th>Came</th><th>Rate</th><th>4-wk avg</th></tr></thead>
             <tbody>
-              {GROUP_ROWS.map(([k, l]) => {
+              {[['Leader', 'Leaders', true], ['Member', 'Members', true], ['Senior Leader', 'Senior leaders'], ['Active Informal Member', 'Active informal'], ['Inactive Informal Member', 'Inactive informal'], ['New Comer', 'New comers']].map(([k, l, rated]) => {
                 const c = cur.byCat[k];
-                const prev4 = idx.held.slice(Math.max(0, heldIdx - 4), heldIdx).map((s) => summaries[s].byCat[k]).filter((x) => x.total);
-                const avg4 = prev4.length ? prev4.reduce((n, x) => n + x.present / x.total, 0) / prev4.length : null;
+                const prev4 = idx.held.slice(Math.max(0, heldIdx - 4), heldIdx).map((s) => summaries[s].byCat[k]);
+                const avg4 = prev4.length ? prev4.reduce((n, x) => n + (rated ? (x.total ? x.present / x.total : 0) : x.present), 0) / prev4.length : null;
                 const r = c.total ? c.present / c.total : null;
                 return (
                   <tr key={k}>
                     <td><span className="row" style={{ gap: 6 }}><span className="dot" style={{ background: CAT_COLOR[k] }} />{l}</span></td>
-                    <td className="num">{c.present}/{c.total}</td>
-                    <td className="num"><span className="bar-inline"><span style={{ width: `${(r || 0) * 100}%` }} /></span>{pct(r)}</td>
-                    <td className="num">{pct(avg4)} <Delta d={r != null && avg4 != null ? (r - avg4) * 100 : null} /></td>
+                    <td className="num">{rated ? `${c.present}/${c.total}` : c.present}</td>
+                    <td className="num">{rated ? <><span className="bar-inline"><span style={{ width: `${(r || 0) * 100}%` }} /></span>{pct(r)}</> : <span className="faint">–</span>}</td>
+                    <td className="num">{avg4 == null ? '–' : rated ? <>{pct(avg4)} <Delta d={r != null ? (r - avg4) * 100 : null} /></> : <>{avg4.toFixed(1)} <Delta d={c.present - avg4} /></>}</td>
                   </tr>
                 );
               })}
-              <tr className="total"><td>Expected total</td><td className="num">{cur.countedPresent}/{cur.counted}</td><td className="num">{pct(cur.rate)}</td><td /></tr>
+              <tr className="total"><td>Total present</td><td className="num">{cur.present}</td><td className="num">{pct(cur.rate)}<span className="tiny muted"> L+M</span></td><td /></tr>
             </tbody>
           </table>
-          <p className="muted tiny" style={{ marginTop: 8 }}>Senior leaders, inactive informal members and inactive new comers ({cur.byCat['Senior Leader'].present + cur.byCat['Inactive Informal Member'].present + (cur.byCat['New Comer'].present - cur.byCat['Active New Comer'].present)} came) are welcome but not counted in the rate.</p>
         </section>
 
         <section className="card">
-          <div className="card-head">
-            <div>
-              <div className="card-title">New comers this semester</div>
-              <div className="card-sub">From first visit toward membership (6 months of steady coming).</div>
-            </div>
-          </div>
+          <div className="card-head"><div><div className="card-title">New comers · {P.label}</div><div className="card-sub">Ready = 6 months since the first visit and at least {Math.round(READY_RATE * 100)}% since then. Leaders still decide.</div></div></div>
           <div className="funnel">
-            {[
-              ['First-time visitors', pipeline.first],
-              ['Came back again', pipeline.cameBack],
-              ['Active new comers now', pipeline.activeNow],
-              ['Promising (50%+ & 4 in a row)', pipeline.promising.length],
-              ['Became members', pipeline.becameMembers],
-            ].map(([l, n], i, arr) => (
+            {[['First-time visitors', pipeline.first], ['Came back again', pipeline.cameBack], ['Active new comers now', pipeline.activeNow], ['Ready for membership', pipeline.ready.length], ['Became members', pipeline.becameMembers]].map(([l, n], i, arr) => (
               <div className="funnel-row" key={l}>
                 <span>{l}</span>
                 <span className="funnel-track"><span style={{ width: `${(n / Math.max(1, ...arr.map((a) => a[1]))) * 100}%`, opacity: 1 - i * 0.12 }} /></span>
@@ -269,23 +203,15 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               </div>
             ))}
           </div>
-          {pipeline.promising.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div className="card-sub" style={{ marginBottom: 6 }}>Promising – encourage them toward membership</div>
-              <div className="chips">
-                {pipeline.promising.map(({ p, f }) => <button key={p.id} className="chipbtn" onClick={() => openPerson(p.id)}>{p.name} <span className="n">{pct(f.sinceRate)}</span></button>)}
-              </div>
+          {pipeline.ready.length > 0 && (
+            <div className="chips" style={{ marginTop: 12 }}>
+              {pipeline.ready.map((p) => <button key={p.id} className="chipbtn" onClick={() => openPerson(p.id)}>{p.name}</button>)}
             </div>
           )}
         </section>
 
         <section className="card">
-          <div className="card-head">
-            <div>
-              <div className="card-title">Programs</div>
-              <div className="card-sub">{RANGES.find((r) => r[0] === range)[1]} · {progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded. Add or paste them on the Attendance page.</div>
-            </div>
-          </div>
+          <div className="card-head"><div><div className="card-title">Programs · {P.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div></div>
           <ul className="prog-list scroll-y">
             {progWeeks.map((s) => {
               const p = progBy[s]; const e = toEthiopian(s);
@@ -296,7 +222,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
                     <span className="prog-title">{p?.kind ? <><span className={`tag ${p.kind === 'No meeting' ? 'bad' : 'lime'}`}>{p.kind}</span> <span className="am">{p.topic || ''}</span></> : <span className="faint">No program recorded</span>}</span>
                     <span className="prog-meta" style={{ display: 'block' }}>{[p?.minister && `by ${p.minister}`, p?.planned_by && `${p.planned_by} plan`].filter(Boolean).join(' · ')}</span>
                   </span>
-                  <span className="num" style={{ textAlign: 'right' }}>{summaries[s] ? <><b>{summaries[s].present}</b><span className="tiny muted" style={{ display: 'block' }}>{pct(summaries[s].rate)}</span></> : <span className="tiny muted">–</span>}</span>
+                  <span className="num" style={{ textAlign: 'right' }}>{summaries[s] ? <><b>{summaries[s].present}</b><span className="tiny muted" style={{ display: 'block' }}>present</span></> : <span className="tiny muted">–</span>}</span>
                 </li>
               );
             })}
@@ -304,22 +230,16 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         </section>
 
         <section className="card">
-          <div className="card-head">
-            <div>
-              <div className="card-title">Month by month</div>
-              <div className="card-sub">Average per Sunday.</div>
-            </div>
-          </div>
+          <div className="card-head"><div><div className="card-title">Month by month</div><div className="card-sub">Average per Sunday in {P.label}.</div></div></div>
           <table className="gtable">
-            <thead><tr><th>Month</th><th className="hide-sm">Sundays</th><th>Present</th><th>Rate</th><th>Members</th></tr></thead>
+            <thead><tr><th>Month</th><th className="hide-sm">Sundays</th><th>Total present</th><th>L+M rate</th></tr></thead>
             <tbody>
-              {months.slice(-8).map((m) => (
+              {months.map((m) => (
                 <tr key={m.k}>
-                  <td>{m.name} <span className="am muted tiny hide-sm">{m.am}</span>{range !== 'semester' && <span className="tiny muted"> {m.year}</span>}</td>
+                  <td>{m.name} <span className="am muted tiny hide-sm">{m.am}</span></td>
                   <td className="num hide-sm">{m.list.length}</td>
                   <td className="num">{m.present.toFixed(1)}</td>
-                  <td className="num"><span className="bar-inline"><span style={{ width: `${m.rate * 100}%` }} /></span>{pct(m.rate)}</td>
-                  <td className="num">{pct(m.members)}</td>
+                  <td className="num">{pct(m.rate)}</td>
                 </tr>
               ))}
             </tbody>
@@ -329,10 +249,11 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <section className="card span2">
           <div className="card-head">
             <div>
-              <div className="card-title">{isNC && rankPeriod === 'semester' ? (rankDir === 'top' ? 'Closest to membership' : 'New comers to encourage') : rankDir === 'top' ? 'Most faithful' : 'Needs encouragement'}</div>
-              <div className="card-sub">{rankPeriod === 'month' ? `Present ÷ Sundays held in ${ET_MONTHS[Number(mKey.slice(5))]} ${mKey.slice(0, 4)}.`
-                : isNC ? 'Membership takes about 6 months of steady coming, so new comers are measured on all Sundays held in the last 6 months – weeks before their first visit count as missed. Each person’s own 6 months is shown too.'
-                : `Present ÷ Sundays held since ${etLabel(semStart)} (${sem}).`}</div>
+              <div className="card-title">{isNC ? (ncView === 'since' ? 'New comers since they joined' : 'Membership review') : rankDir === 'top' ? 'Most faithful' : 'Needs encouragement'} · {P.label}</div>
+              <div className="card-sub">{isNC
+                ? (ncView === 'since' ? 'Weekly follow-up: each person from their own first Sunday. Fewer than 4 Sundays is too early to rank.'
+                  : `For deciding membership: every Sunday from ${etLabel(P.from)} counts, so someone who joined late can't outrank someone who came all along.`)
+                : 'Present ÷ Sundays they were on the list in this period.'}</div>
             </div>
             <div className="seg">
               <button className={rankDir === 'top' ? 'on' : ''} onClick={() => setRankDir('top')}>Top</button>
@@ -340,39 +261,34 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             </div>
           </div>
           <div className="rank-tools">
-            <div className="seg">
-              <button className={rankPeriod === 'semester' ? 'on' : ''} onClick={() => setRankPeriod('semester')}>Semester</button>
-              <button className={rankPeriod === 'month' ? 'on' : ''} onClick={() => setRankPeriod('month')}>Month</button>
+            <div className="chips" style={{ flexWrap: 'wrap' }}>
+              {RANK_GROUPS.map(([k, l]) => <button key={k} className={`chipbtn ${rankGroup === k ? 'on' : ''}`} onClick={() => { setRankGroup(k); setExpanded(false); }}>{l}</button>)}
             </div>
-            {rankPeriod === 'month' && (
-              <select className="small-select" value={mKey} onChange={(e) => setRankMonth(e.target.value)} aria-label="Month">
-                {monthsHeld.map(([k, days]) => <option key={k} value={k}>{monthLabel({ year: Number(k.slice(0, 4)), month: Number(k.slice(5)) })} · {days.length} Sundays</option>)}
-              </select>
+            {isNC && (
+              <div className="seg">
+                <button className={ncView === 'since' ? 'on' : ''} onClick={() => setNcView('since')}>Since joining</button>
+                <button className={ncView === 'review' ? 'on' : ''} onClick={() => setNcView('review')}>Membership review</button>
+              </div>
             )}
           </div>
-          <div className="scroll-x" style={{ marginBottom: 8 }}>
-            <div className="chips" style={{ flexWrap: 'nowrap' }}>
-              {[['Member', 'Members'], ['Leader', 'Leaders'], ['Active Informal Member', 'Active informal'], ['Active New Comer', 'Active new comers']].map(([k, l]) => (
-                <button key={k} className={`chipbtn ${rankGroup === k ? 'on' : ''}`} onClick={() => setRankGroup(k)}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {ranked.length === 0 && <p className="muted small">Nobody to rank for this period.</p>}
+          {ranked.list.length === 0 && <p className="muted small">Nobody to rank for this period.</p>}
           <ol className="rank-list">
-            {ranked.map(({ p, score, sub, six }, i) => (
+            {shown.map(({ p, score, sub, ready, six }, i) => (
               <li key={p.id} className="rank-item" onClick={() => openPerson(p.id)}>
                 <span className="rank-pos">{i + 1}</span>
                 <span className="row" style={{ minWidth: 0 }}>
                   <Initials name={p.name} category={p.category} />
-                  <span className="rank-name">{p.name}{six && <span className="tag lime" style={{ marginLeft: 6 }}>6 months</span>}<small>{sub}</small></span>
+                  <span className="rank-name">{p.name}{ready ? <span className="tag ok" style={{ marginLeft: 6 }}>ready</span> : six ? <span className="tag lime" style={{ marginLeft: 6 }}>6 months</span> : null}<small>{sub}</small></span>
                 </span>
                 <Meter v={score} color={rankDir === 'top' ? 'var(--present)' : 'var(--absent)'} />
               </li>
             ))}
           </ol>
+          {ranked.list.length > 8 && <button className="btn ghost wide" onClick={() => setExpanded(!expanded)}>{expanded ? 'Show fewer' : `Show all ${ranked.list.length}`}</button>}
+          {ranked.tooNew.length > 0 && <p className="small muted" style={{ marginTop: 10 }}>Too early to rank (under 4 Sundays): {ranked.tooNew.map((x) => x.p.name).join(', ')}</p>}
         </section>
       </div>
-      <p className="muted tiny">Each Sunday keeps the group and active status people had on that day, so past numbers don't change when someone's status changes later. {fmtGreg(sel)}.</p>
+      <p className="muted tiny">Each Sunday keeps the group people had on that day, so past numbers don't change later. {fmtGreg(sel)}.</p>
     </div>
   );
 }
@@ -386,9 +302,7 @@ function Kpi({ label, val, foot, color }) {
     </div>
   );
 }
-const lr = (s) => { const t = s.byCat['Leader'].total; return t ? s.byCat['Leader'].present / t : null; };
 const noteOf = (p) => (p?.kind ? `${p.kind}${p.topic ? ': ' + p.topic : ''}${p.minister ? ' – ' + p.minister : ''}` : null);
-
 
 function Reminders({ D, today, go }) {
   if (!D.p2) return null;

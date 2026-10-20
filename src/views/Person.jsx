@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { etLabel, fmtGreg, groupByMonth, sundaysOf, semesterOf, semesterStart, SEMESTERS, ET_MONTHS_AM } from '../lib/ethiopian';
+import { etLabel, fmtGreg, groupByMonth, sundaysOf, semesterOf, semesterStart, SEMESTERS, ET_MONTHS_AM, semName } from '../lib/ethiopian';
 import { CATEGORIES, ONE, pct, personFacts, stageOf, STAGE_LABEL } from '../lib/stats';
 import { Sheet, Initials, Icon, CAT_COLOR, telLink } from './common';
 import { ProfileForm } from './Profiles';
 import LeaderStage from './LeaderStage';
+import { changeGroup, setResponsible } from '../lib/changes';
+import GroupSheet from './GroupSheet';
 import { ageOf } from '../lib/exports';
 
 export default function PersonSheet({ person: p, onClose, idx, latest, today, D, perm, saveMark, reload, setError, personBy }) {
@@ -12,6 +14,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
   const [showProfile, setShowProfile] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
   const [manage, setManage] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
   const marks = idx.byPerson[p.id] || {};
   const f = personFacts(p, marks, idx.held, latest, semesterStart(semesterOf(latest)));
   const s = sundaysOf(sem);
@@ -46,6 +49,12 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
         <div className="p-stat"><b>{pct(f.sinceRate)}</b><span>Since first visit ({f.visits} visits)</span></div>
       </div>
 
+      <div className="p-actions">
+        {perm.manage && <button className="btn ghost small" onClick={() => setGroupOpen(true)}><span className="dot" style={{ background: CAT_COLOR[p.category] }} /> Change group</button>}
+        {perm.mark && <button className="btn ghost small" onClick={() => setEditProfile(true)}><Icon.edit width="16" height="16" /> Edit profile</button>}
+        {tel && <a className="btn ghost small" href={tel}><Icon.phone width="16" height="16" /> Call</a>}
+      </div>
+
       <dl className="kv">
         <dt>Phone</dt><dd>{tel ? <a href={tel}>{p.phone}</a> : <span className="faint">not saved</span>}</dd>
         <dt>First Sunday</dt><dd>{p.week_joined ? `${etLabel(p.week_joined, true)} (${fmtGreg(p.week_joined)})` : <span className="faint">before records</span>}</dd>
@@ -68,7 +77,7 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
       )}
 
       <div className="section-title">
-        <span>Attendance · {sem}</span>
+        <span>Attendance · {semName(sem)}</span>
         <span className="row">
           <button className="icon-btn" disabled={si <= 0} onClick={() => setSem(SEMESTERS[si - 1])} aria-label="Previous semester"><Icon.left /></button>
           <button className="icon-btn" disabled={si >= SEMESTERS.length - 1 || SEMESTERS[si + 1] > semesterOf(today)} onClick={() => setSem(SEMESTERS[si + 1])} aria-label="Next semester"><Icon.right /></button>
@@ -118,17 +127,18 @@ export default function PersonSheet({ person: p, onClose, idx, latest, today, D,
       {perm.manage && (
         <>
           <div className="section-title"><span>Manage</span>{!manage && <button className="btn ghost small" onClick={() => setManage(true)}>Change group or responsible</button>}</div>
-          {manage && <Manage p={p} idx={idx} latest={latest} leaders={leaders} current={current} reload={reload} setError={setError} onDone={() => setManage(false)} />}
+          {manage && <Manage p={p} idx={idx} latest={latest} leaders={leaders} current={current} assignments={D.assignments} reload={reload} setError={setError} onDone={() => setManage(false)} />}
           <div className="section-title">Leadership path</div>
           <LeaderStage key={`${p.category}-${stageOf(p)}`} p={p} idx={idx} latest={latest} reload={reload} setError={setError} />
         </>
       )}
+      {groupOpen && <GroupSheet p={p} idx={idx} latest={latest} history={D.history} setError={setError} onClose={() => setGroupOpen(false)} onDone={() => { setGroupOpen(false); reload(); }} />}
       {editProfile && <ProfileForm person={p} people={D.people} canEdit={perm.mark} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); reload(); }} setError={setError} />}
     </Sheet>
   );
 }
 
-function Manage({ p, idx, latest, leaders, current, reload, setError, onDone }) {
+function Manage({ p, idx, latest, leaders, current, assignments, reload, setError, onDone }) {
   const [cat, setCat] = useState(p.category || 'New Comer');
   const [from, setFrom] = useState(latest);
   const [lead, setLead] = useState(current?.leader_id || '');
@@ -138,20 +148,9 @@ function Manage({ p, idx, latest, leaders, current, reload, setError, onDone }) 
   async function save() {
     setBusy(true);
     try {
-      if (cat !== p.category) {
-        const { error } = await supabase.from('people').update({ category: cat, nc_active: cat === 'New Comer' ? true : p.nc_active }).eq('id', p.id);
-        if (error) throw error;
-        // keep weekly records from the chosen Sunday in step with the new group
-        await supabase.from('attendance').update({ category: cat, active: true }).eq('person_id', p.id).gte('sunday', from);
-        await supabase.from('category_history').update({ since: from }).eq('person_id', p.id).eq('category', cat).gte('since', from);
-      }
+      if (cat !== p.category) await changeGroup(p, cat, from);
       const leader = leaders.find((l) => String(l.id) === String(lead));
-      if (String(lead || '') !== String(current?.leader_id || '')) {
-        const today = new Date().toISOString().slice(0, 10);
-        if (current) await supabase.from('assignments').update({ until: today }).eq('id', current.id);
-        if (leader) await supabase.from('assignments').insert({ person_id: p.id, leader_id: leader.id, leader_name: leader.name, since: today });
-        await supabase.from('people').update({ responsible: leader?.name || null }).eq('id', p.id);
-      }
+      if (String(lead || '') !== String(current?.leader_id || '')) await setResponsible(p, leader, assignments);
       reload(); onDone();
     } catch (e) { setError(`Not saved: ${e.message}`); }
     setBusy(false);

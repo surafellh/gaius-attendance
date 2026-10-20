@@ -6,8 +6,8 @@ import { can, roleName } from './lib/roles';
 import Dashboard from './views/Dashboard';
 import Attendance from './views/Attendance';
 import FollowUp from './views/FollowUp';
-import Register from './views/Register';
-import Profiles from './views/Profiles';
+import People from './views/People';
+import AccountPanel, { loadPrefs, applyPrefs } from './views/Account';
 import Departments from './views/Departments';
 import Users from './views/Users';
 import Auth from './views/Auth';
@@ -57,24 +57,18 @@ export default function App() {
   return <Main profile={profile} />;
 }
 
-const TABS = [
-  ['home', 'Dashboard', Icon.home],
-  ['attendance', 'Attendance', Icon.grid],
-  ['follow', 'Follow-up', Icon.bell],
-  ['register', 'People', Icon.people],
-  ['profiles', 'Profiles', Icon.card, 'wide-only'],
-  ['departments', 'Departments', Icon.layers, 'wide-only'],
-  ['meeting', 'Meeting', Icon.list, 'wide-only'],
-  ['calendar', 'Calendar', Icon.cal, 'wide-only'],
-  ['leadership', 'Leadership', Icon.star, 'wide-only'],
-  ['users', 'Users', Icon.shield, 'wide-only'],
+/* Tab groups: Home · Follow-up (people) · Coordination (programs & plans) · Admin */
+const GROUPS = [
+  ['home', 'Home', Icon.home, [['home', 'Dashboard']]],
+  ['follow', 'Follow-up', Icon.people, [['attendance', 'Attendance'], ['people', 'People'], ['calls', 'Calls'], ['leadership', 'Leadership']]],
+  ['coord', 'Coordination', Icon.cal, [['calendar', 'Calendar & plans'], ['meeting', 'Meetings'], ['departments', 'Departments']]],
+  ['admin', 'Admin', Icon.shield, [['users', 'Users & access']], 'users'],
 ];
-const MORE = ['profiles', 'departments', 'meeting', 'calendar', 'leadership', 'users'];
+const groupOf = (tab) => GROUPS.find((g) => g[3].some(([k]) => k === tab)) || GROUPS[0];
 
 function Main({ profile }) {
   const perm = can(profile);
-  const [tab, setTab] = useState('home');
-  const [more, setMore] = useState(false);
+  const [tab, setTab] = useState(() => { const p = loadPrefs(); applyPrefs(p); return p.start || 'home'; });
   const [menu, setMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -172,6 +166,26 @@ function Main({ profile }) {
     if (error) { setError(`Not saved: ${error.message}`); load(); }
   }
 
+  /* save many marks at once (Attendance page Save button) */
+  async function saveMarks(list) {
+    if (!perm.mark || !list.length) return true;
+    for (const s of [...new Set(list.map((x) => x.sunday))]) if (!idx.bySunday[s]?.length && !(await createRoll(s))) return false;
+    const rows = list.map(({ personId, sunday, status }) => {
+      const prev = idx.byPerson[personId]?.[sunday];
+      const p = personBy[personId];
+      return {
+        person_id: personId, sunday, status,
+        category: prev?.category || p.category,
+        active: prev?.active ?? (p.category === 'New Comer' ? activeOn(idx.byPerson[personId], idx.held, sunday) : true),
+        called: prev?.called ?? false, reason: prev?.reason ?? null, updated_at: new Date().toISOString(),
+      };
+    });
+    const { error } = await supabase.from('attendance').upsert(rows, { onConflict: 'person_id,sunday' });
+    if (error) { setError(`Not saved: ${error.message}`); return false; }
+    patchLocal(rows);
+    return true;
+  }
+
   async function saveProgram(s, fields) {
     const row = { center_id: D.center?.id || 1, sunday: s, ...fields, updated_at: new Date().toISOString() };
     const { error } = await supabase.from('programs').upsert(row, { onConflict: 'center_id,sunday' });
@@ -181,8 +195,8 @@ function Main({ profile }) {
 
   const ctx = {
     profile, perm, D, idx, latest, today, progBy, personBy, summaries, calInfo, rosterFor,
-    saveMark, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek, openExport: (o) => setExporting(o || {}),
-    semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: setTab,
+    saveMark, saveMarks, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek, openExport: (o) => setExporting(o || {}),
+    semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: (k) => goTab({ follow: 'calls', register: 'people', profiles: 'people' }[k] || k),
   };
 
   const alerts = useMemo(() => {
@@ -191,7 +205,10 @@ function Main({ profile }) {
       && idx.byPerson[r.person_id]?.[idx.held[idx.held.indexOf(latest) - 1]]?.status === 'Present').length;
   }, [idx, latest, personBy]);
 
-  const tabs = TABS.filter(([k]) => k !== 'users' || perm.users);
+  const groups = GROUPS.filter((g) => !g[4] || perm[g[4]]);
+  const cur = groupOf(tab);
+  const lastTab = useMemo(() => ({}), []);
+  const goTab = (k) => { lastTab[groupOf(k)[0]] = k; setTab(k); window.scrollTo(0, 0); };
   const initials = (profile.full_name || profile.email || '?').trim()[0].toUpperCase();
 
   return (
@@ -202,32 +219,42 @@ function Main({ profile }) {
             <Mark />
             <div>
               <div className="brand-name">Gaius {D.center?.name || ''}</div>
-              <div className="brand-sub">Sunday attendance & follow-up</div>
+              <div className="brand-sub">{D.center?.name_am ? <span className="am">{D.center.name_am} · </span> : null}{profile.title || roleName(profile.role)}</div>
             </div>
           </div>
-          <div className="row">
-            {D.center && <span className="center-pill am">{D.center.name_am || D.center.name}</span>}
-            <button className="avatar" onClick={() => setMenu(true)} aria-label="Account">{initials}</button>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="top-btn" onClick={() => setExporting({})} aria-label="Export a report"><Icon.download /><span className="desk-only">Export</span></button>
+            <button className="avatar" onClick={() => setMenu(true)} aria-label="Account and settings">{initials}</button>
           </div>
         </div>
       </header>
       <nav className="nav" aria-label="Sections">
-        {tabs.map(([k, l, Ico, cls]) => (
-          <button key={k} className={`${tab === k ? 'on' : ''} ${cls || ''}`} onClick={() => { setTab(k); window.scrollTo(0, 0); }} aria-current={tab === k ? 'page' : undefined}>
+        {groups.map(([k, l, Ico, tabs]) => (
+          <button key={k} className={cur[0] === k ? 'on' : ''} aria-current={cur[0] === k ? 'page' : undefined}
+            onClick={() => goTab(lastTab[k] || tabs[0][0])}>
             <Ico />{l}{k === 'follow' && alerts ? <span className="badge">{alerts}</span> : null}
           </button>
         ))}
-        <button className={`more-btn ${MORE.includes(tab) ? 'on' : ''}`} onClick={() => setMore(true)}><Icon.more />More</button>
       </nav>
+      {cur[3].length > 1 && (
+        <div className="subnav" role="tablist" aria-label={cur[1]}>
+          <div className="subnav-inner">
+            {cur[3].map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => goTab(k)}>
+                {l}{k === 'calls' && alerts ? <span className="badge">{alerts}</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <main>
         {error && <div className="banner err" style={{ marginBottom: 12 }}>{error}</div>}
         {loading ? <div className="center muted">Loading Gaius {D.center?.name || ''}…</div> : (
           <>
             {tab === 'home' && <Dashboard {...ctx} />}
             {tab === 'attendance' && <Attendance {...ctx} />}
-            {tab === 'follow' && <FollowUp {...ctx} />}
-            {tab === 'register' && <Register {...ctx} />}
-            {tab === 'profiles' && <Profiles {...ctx} />}
+            {tab === 'calls' && <FollowUp {...ctx} />}
+            {tab === 'people' && <People {...ctx} />}
             {tab === 'departments' && <Departments {...ctx} />}
             {tab === 'users' && <Users {...ctx} />}
             {tab === 'meeting' && <Meeting {...ctx} />}
@@ -240,29 +267,9 @@ function Main({ profile }) {
 
       {exporting && <ExportSheet ctx={ctx} initial={exporting} onClose={() => setExporting(null)} />}
       {personId && personBy[personId] && <PersonSheet {...ctx} person={personBy[personId]} onClose={() => setPersonId(null)} />}
-      {more && (
-        <Sheet title="More" onClose={() => setMore(false)}>
-          <div className="page" style={{ gap: 8 }}>
-            {[['profiles', 'Profiles', Icon.card, 'Members, leaders, potential leaders – HQ profile format'],
-              ['departments', 'Departments', Icon.layers, 'Who leads and serves in each department'],
-              ['meeting', 'Leaders’ meeting', Icon.list, 'Agenda, open items and reminders'],
-              ['calendar', 'Calendar', Icon.cal, 'Events and the HQ teaching plan'],
-              ['leadership', 'Leadership', Icon.star, 'Potential leaders and their evaluations'],
-              ...(perm.users ? [['users', 'Users & settings', Icon.shield, 'Access levels, leaders’ meeting day']] : [])].map(([k, l, Ico, sub]) => (
-              <button key={k} className="pcard" onClick={() => { setTab(k); setMore(false); window.scrollTo(0, 0); }}>
-                <span className="icon-btn"><Ico /></span>
-                <span className="pinfo"><span className="pname">{l}</span><span className="pmeta">{sub}</span></span>
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
       {menu && (
         <Sheet title="Account" onClose={() => setMenu(false)}>
-          <p><b>{profile.full_name}</b></p>
-          <p className="muted small" style={{ marginBottom: 16 }}>{profile.email} · {roleName(profile.role)}{profile.title ? ` · ${profile.title}` : ''}</p>
-          <button className="btn lime wide" style={{ marginBottom: 10 }} onClick={() => { setMenu(false); setExporting({}); }}>Export reports (Excel / PDF)</button>
-          <button className="btn ghost wide" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          <AccountPanel profile={profile} perm={perm} onExport={() => { setMenu(false); setExporting({}); }} go={(k) => { setMenu(false); goTab(k); }} />
         </Sheet>
       )}
     </div>

@@ -6,14 +6,16 @@ import { etNewYear } from './ethiopian.js';
 const MONTHS = [
   ['መስከረም', 'meskerem'], ['ጥቅምት', 'tikimt', 'tikemt'], ['ኅዳር', 'ህዳር', 'hidar'], ['ታኅሣሥ', 'ታህሳስ', 'ታሕሳስ', 'tahsas', 'tahesas'],
   ['ጥር', 'tir'], ['የካቲት', 'yekatit'], ['መጋቢት', 'megabit'], ['ሚያዝያ', 'ሚያዚያ', 'miyazya', 'miyazia'], ['ግንቦት', 'ginbot'],
-  ['ሰኔ', 'sene'], ['ሐምሌ', 'ሀምሌ', 'hamle'], ['ነሐሴ', 'ነሀሴ', 'nehase'], ['ጳጉሜ', 'ጳጉሜን', 'pagume'],
+  ['ሰኔ', 'sene'], ['ሐምሌ', 'ሀምሌ', 'hamle'], ['ነሐሴ', 'ነሀሴ', 'nehase'], ['ጳጉሜ', 'ጳጉሜን', 'ጷጉሜ', 'ጷጉሜን', 'pagume'],
 ];
 const KINDS = [
   [/ትምህርት|teaching/i, 'Teaching'], [/አንድነት|ህብረት|ኅብረት|fellowship/i, 'Fellowship / get-together'],
-  [/አምልኮ|worship/i, 'Worship night'], [/ጸሎት|ፀሎት|prayer/i, 'Prayer'], [/ውይይት|discussion/i, 'Discussion'],
+  [/አምልኮ|worship|ወርሺፕ/i, 'Worship night'], [/ጸሎት|ፀሎት|prayer/i, 'Prayer'], [/ውይይት|discussion/i, 'Discussion'],
   [/ዲቮሽን|devotion/i, 'Devotion'], [/ስልጠና|ሥልጠና|training/i, 'Training'], [/ወንጌል|outreach|evangel/i, 'Outreach'],
-  [/የለም|no meeting|ፕሮግራም የለም/i, 'No meeting'],
+  [/ጥናት|bible study|study/i, 'Bible study'],
 ];
+const NONE = /የለም|no meeting|አልነበረም/i;
+const KIND_WORDS = /^(የ\s*)?(ትምህርት|አንድነት|ህብረት|ኅብረት|አምልኮ|ፀሎት|ጸሎት|ውይይት|ዲቮሽን|ስልጠና|ሥልጠና|ጥናት)(\s*ጊዜ)?$/;
 export const MINISTER_ALIASES = { 'ፓ/ር ፍፄ': 'ፓ/ር ፍፁም (Pastor Fitsum)', 'ፓር ፍፄ': 'ፓ/ር ፍፁም (Pastor Fitsum)' };
 
 const monthIndex = (w) => MONTHS.findIndex((v) => v.some((n) => n.toLowerCase() === w.toLowerCase()));
@@ -27,19 +29,32 @@ export function parseReport(text, year) {
     const m = line.match(/^([^\s\d-]+)\s*(\d{1,2})\s*-?\s*(.*)$/);
     const mi = m ? monthIndex(m[1]) : -1;
     if (!m || mi < 0) { skipped.push(line); continue; }
-    const parts = m[3].split(/\s+-\s*|\s*-\s+|^-|-$/).map((s) => s.trim());
-    while (parts.length < 3) parts.push('');
-    const [ministerRaw, programRaw, ...topicParts] = parts;
-    const topicRaw = topicParts.join(' - ').trim();
-    const kind = KINDS.find(([re]) => re.test(programRaw))?.[1] || (programRaw ? 'Special program' : 'Teaching');
+    const parts = m[3].split(/\s+-\s*|\s*-\s+|^-|-$/).map((x) => x.trim());
+    const filled = parts.filter(Boolean);
+    if (!filled.length) { skipped.push(line); continue; }
+    let kind, minister = '', topic = '', notes = null;
+    if (filled.some((x) => NONE.test(x))) { kind = 'No meeting'; notes = filled.join(' – '); }
+    else {
+      const k = parts.findIndex((x) => x && !x.startsWith('(') && KINDS.some(([re]) => re.test(x)));
+      if (k >= 0) {
+        const kp = parts[k];
+        kind = KINDS.find(([re]) => re.test(kp))[1];
+        minister = parts.slice(0, k).filter(Boolean).join(' ');
+        topic = parts.slice(k + 1).filter(Boolean).join(' - ');
+        if (!KIND_WORDS.test(kp)) { if (!topic) topic = kp; else notes = kp; } // e.g. "ትምህርት እና ፀሎት"
+      } else if (filled.length === 1) { kind = 'Special program'; topic = filled[0]; }
+      else { kind = 'Special program'; minister = parts[0]; topic = parts.slice(1).filter(Boolean).join(' - '); }
+    }
     const day = Number(m[2]);
-    const t = etNewYear(year) + (mi * 30 + day - 1) * DAY;
-    const sunday = new Date(t).toISOString().slice(0, 10);
-    const isSunday = new Date(t).getUTCDay() === 0;
+    let t = etNewYear(year) + (mi * 30 + day - 1) * DAY;
+    let isSunday = new Date(t).getUTCDay() === 0, label = `${m[1]} ${String(day).padStart(2, '0')}`;
+    if (!isSunday) { // a report date one day off (e.g. Yekatit 02 for Yekatit 01) snaps to that Sunday
+      const wd = new Date(t).getUTCDay();
+      if (wd === 1 || wd === 6) { t += (wd === 1 ? -1 : 1) * DAY; isSunday = true; label += ' (moved to Sunday)'; }
+    }
     rows.push({
-      sunday, isSunday, label: `${m[1]} ${String(day).padStart(2, '0')}`,
-      kind, topic: kind === 'Special program' && !topicRaw ? programRaw : topicRaw || (kind === 'Fellowship / get-together' ? programRaw : ''),
-      minister: MINISTER_ALIASES[ministerRaw] || ministerRaw, planned_by: 'HQ', notes: null,
+      sunday: new Date(t).toISOString().slice(0, 10), isSunday, label,
+      kind, topic, minister: MINISTER_ALIASES[minister] || minister, planned_by: 'HQ', notes,
     });
   }
   return { rows, skipped };
