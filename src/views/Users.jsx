@@ -39,7 +39,7 @@ export default function Users({ D, R, perm, profile, realProfile, viewAs, setVie
       </div>
       {isAdmin && (
         <section className="card">
-          <div className="card-head"><div><div className="card-title">View as a role</div><div className="card-sub">See the app exactly as another role sees it – e.g. the Director’s HQ view, or a leader’s view-only pages. A bar at the top lets you exit.</div></div></div>
+          <div className="card-head"><div><div className="card-title">View as a role</div><div className="card-sub">Check exactly what a role can see: HQ roles open the HQ side, center roles the center side (view-only for leaders). A bar at the top lets you exit. To use the HQ side yourself, use the HQ side / Center side button in the header.</div></div></div>
           <div className="chips" style={{ flexWrap: 'wrap' }}>
             {ROLES.filter(([k]) => !['former', 'pending', 'admin'].includes(k)).map(([k, l]) => <button key={k} className={`chipbtn ${viewAs === k ? 'on' : ''}`} onClick={() => setViewAs(viewAs === k ? null : k)}>{l}</button>)}
           </div>

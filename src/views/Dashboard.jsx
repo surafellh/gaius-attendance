@@ -30,7 +30,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const prevS = heldIdx > 0 ? idx.held[heldIdx - 1] : null;
   const cur = summaries[sel];
   const prev = prevS ? summaries[prevS] : null;
-  const years = useMemo(() => [...new Set(idx.held.map((s) => toEthiopian(s).year))].sort((a, b) => b - a), [idx.held]);
+  const years = useMemo(() => [...new Set([...idx.held.map((s) => toEthiopian(s).year), toEthiopian(today).year])].sort((a, b) => b - a), [idx.held, today]);
 
   const weeks = useMemo(() => idx.held.filter((s) => s >= P.from && s <= P.to), [idx.held, P.from, P.to]);
   const PB = Pf('bars'), bWeeks = weeksOf(PB), PL = Pf('rate'), lWeeks = weeksOf(PL);
@@ -206,6 +206,8 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             <span className="lg"><i className="ln" style={{ background: 'var(--c-leader)' }} />Leaders</span>
           </div>
         </section>
+
+        <Compare idx={idx} summaries={summaries} D={D} period={period} P={P} hq={hq} />
 
         {perm.studio && <section className="card">
           <div className="card-head"><div><div className="card-title">Groups on {etLabel(sel)}</div><div className="card-sub">Compared with the 4 Sundays before.</div></div></div>
@@ -401,6 +403,53 @@ function Promising({ idx, rows, personBy, sel }) {
           ))}
         </ol>
       )}
+    </section>
+  );
+}
+
+/* the period against the same period a year earlier – a semester, the whole year, a month or the last 12 months */
+const shiftYear = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 364 * 864e5).toISOString().slice(0, 10);
+function Compare({ idx, summaries, D, period, P, hq }) {
+  if (period.kind === 'all') return null;
+  const Q = period.kind === 'last12' ? { from: shiftYear(P.from, -1), to: shiftYear(P.to, -1), label: 'the 12 months before' } : { ...periodOf({ ...period, year: period.year - 1 }) };
+  const stats = (X) => {
+    const weeks = idx.held.filter((s) => s >= X.from && s <= X.to);
+    const w = weeks.map((s) => summaries[s]);
+    const avg = (f) => { const v = w.map(f).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const inX = (d) => d && d >= X.from && d <= X.to;
+    return {
+      n: weeks.length, present: avg((x) => x.present), rate: avg((x) => x.rate), leaders: avg((x) => x.byCat.Leader.present), members: avg((x) => x.byCat.Member.present),
+      informal: avg((x) => x.informal), best: w.length ? Math.max(...w.map((x) => x.present)) : null,
+      first: D.people.filter((p) => inX(p.week_joined)).length, became: D.history.filter((h) => h.category === 'Member' && inX(h.since) && h.note !== 'from sheet').length,
+    };
+  };
+  const a = stats(P), b = stats(Q);
+  const f1 = (v) => (v == null ? '–' : v.toFixed(1));
+  const rows = [
+    ['Sundays held', a.n, b.n, (v) => v],
+    ['Average present', a.present, b.present, f1],
+    ['Leaders (avg present)', a.leaders, b.leaders, f1],
+    ['Members (avg present)', a.members, b.members, f1],
+    ['Informal members (avg)', a.informal, b.informal, f1],
+    ['Leaders & members rate', a.rate, b.rate, pct, true],
+    ['Highest Sunday', a.best, b.best, (v) => v ?? '–'],
+    ['First-time comers', a.first, b.first, (v) => v],
+    ...(hq ? [] : [['Became members', a.became, b.became, (v) => v]]),
+  ];
+  return (
+    <section className="card span2">
+      <div className="card-head"><div><div className="card-title">{P.label} compared with {period.kind === 'last12' ? 'the year before' : Q.label}</div>
+        <div className="card-sub">Averages per Sunday. Pick Whole year, 12 months or a semester at the top to compare a longer stretch.</div></div></div>
+      {!b.n && <p className="muted small">No Sundays recorded in {Q.label} – nothing to compare with yet.</p>}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="gtable compare">
+          <thead><tr><th /><th>{P.label}</th><th>{period.kind === 'last12' ? 'Year before' : Q.label}</th><th>Change</th></tr></thead>
+          <tbody>{rows.map(([l, x, y, fmt, isRate]) => (
+            <tr key={l}><td>{l}</td><td className="num"><b>{fmt(x)}</b></td><td className="num muted">{fmt(y)}</td>
+              <td className="num">{x != null && y != null && b.n ? <Delta d={isRate ? (x - y) * 100 : x - y} suffix={isRate ? ' pts' : ''} /> : <span className="faint">–</span>}</td></tr>
+          ))}</tbody>
+        </table>
+      </div>
     </section>
   );
 }

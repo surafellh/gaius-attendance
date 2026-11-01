@@ -22,9 +22,10 @@ import PlansPage from './views/Plans';
 import Roadmap from './views/Roadmap';
 import Messages from './views/Messages';
 import Finance from './views/Finance';
-import Centers from './views/Centers';
+import HqApp from './hq/HqApp';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
+import { scopeToCenter } from './lib/scope';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -68,7 +69,7 @@ export default function App() {
 /* The menu: five sections, each with a few tabs. Messages, downloads, undo, studio and app admin sit in the header. */
 function sectionsFor(perm) {
   return [
-    ['home', 'Home', Icon.home, perm.switchCenter ? [['centers', 'All centers'], ['home', 'Center dashboard']] : [['home', 'Dashboard']]],
+    ['home', 'Home', Icon.home, [['home', 'Dashboard']]],
     ['att', 'Attendance', Icon.check, [['attendance', 'Sunday sheet'], ...(perm.hqView ? [] : [['calls', 'Calls']])]],
     ['people', 'People', Icon.people, [['people', 'Everyone'], ...(perm.profiles ? [['leadership', 'Leadership']] : []), ['roadmap', 'Roadmap']]],
     ['plans', 'Plans', Icon.cal, [['calendar', 'Calendar'], ['plans', perm.hqView ? 'Plans & budget' : 'Plans & budget'], ['meeting', 'Meetings'], ...(perm.studio ? [['departments', 'Departments']] : [])]],
@@ -77,13 +78,16 @@ function sectionsFor(perm) {
 }
 const HEADER_TABS = ['messages', 'users'];
 const VIEW_KEY = 'gaius-studio';
+const SIDE_KEY = 'gaius-side';
 
 function Main({ profile: realProfile }) {
   const [viewAs, setViewAs] = useState(null);          // admin only: see the app as another role
   const profile = viewAs ? { ...realProfile, role: viewAs } : realProfile;
   const [studio, setStudio] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === '1'; } catch { return false; } });
-  const perm = can(profile, { studio });
-  const [tab, setTab] = useState(() => { const p = loadPrefs(); applyPrefs(p); return can(realProfile).switchCenter ? 'centers' : (p.start || 'home'); });
+  const [side, setSideState] = useState(() => { try { return localStorage.getItem(SIDE_KEY) || 'hq'; } catch { return 'hq'; } });
+  const setSide = (v) => { setSideState(v); try { localStorage.setItem(SIDE_KEY, v); } catch { /* private mode */ } window.scrollTo(0, 0); };
+  const perm = can(profile, { studio, side });
+  const [tab, setTab] = useState(() => { const p = loadPrefs(); applyPrefs(p); return p.start || 'home'; });
   const [menu, setMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -124,6 +128,7 @@ function Main({ profile: realProfile }) {
       } catch { Object.assign(p2, { reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: false }); }
       // Release 4: roadmap lessons linked to program topics
       try { Object.assign(p2, { lessonTopics: await q('lesson_topics'), r4: true }); } catch { Object.assign(p2, { lessonTopics: [], r4: false }); }
+      try { Object.assign(p2, { activities: await q('hq_activities'), r6: true }); } catch { Object.assign(p2, { activities: [], r6: false }); }
       try { const rows = await q('site_info'); Object.assign(p2, { site: Object.fromEntries(rows.map((r) => [r.key, r.value])), r5: true }); } catch { Object.assign(p2, { site: {}, r5: false }); }
       setR({
         centers: centers.sort((a, b) => a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
@@ -269,6 +274,12 @@ function Main({ profile: realProfile }) {
   const switchCenter = (id) => { setCenterId(id); setWeek(null); setPersonId(null); };
   const setMode = (v) => { setStudio(v); try { localStorage.setItem(VIEW_KEY, v ? '1' : ''); } catch { /* private mode */ } };
   const tab2 = shownTab;
+  const pickViewAs = (r) => { setViewAs(r); setTab('home'); };
+
+  if (perm.hqSide) {
+    return <HqApp R={R} today={today} profile={profile} realProfile={realProfile} perm={perm} reload={load} setError={setError} error={error} loading={loading} Logo={Logo}
+      onCenterSide={realProfile.role === 'admin' && !viewAs ? () => setSide('center') : null} viewAs={viewAs} setViewAs={pickViewAs} studio={studio} setMode={setMode} />;
+  }
 
   return (
     <div className={`app ${perm.studio ? 'studio' : 'general'}`}>
@@ -277,8 +288,8 @@ function Main({ profile: realProfile }) {
           <div className="brand">
             <Logo site={R.site} />
             <div>
-              <div className="brand-name">Gaius {perm.switchCenter && tab2 === 'centers' ? 'Ministry' : D.center?.name || ''}</div>
-              <div className="brand-sub">{D.center?.name_am && !(perm.switchCenter && tab2 === 'centers') ? <span className="am">{D.center.name_am} · </span> : null}{profile.title && !viewAs ? profile.title : roleName(profile.role)}</div>
+              <div className="brand-name">Gaius {D.center?.name || ''}</div>
+              <div className="brand-sub">{D.center?.name_am ? <span className="am">{D.center.name_am} · </span> : null}{profile.title && !viewAs ? profile.title : roleName(profile.role)}</div>
             </div>
           </div>
           <nav className="menubar" aria-label="Sections">
@@ -289,11 +300,12 @@ function Main({ profile: realProfile }) {
             ))}
           </nav>
           <div className="top-actions">
-            {perm.switchCenter && R.centers.length > 1 && tab2 !== 'centers' && (
+            {perm.switchCenter && R.centers.length > 1 && (
               <select className="center-switch" value={centerId} onChange={(e) => switchCenter(Number(e.target.value))} aria-label="Center">
                 {R.centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
+            {realProfile.role === 'admin' && !viewAs && <button className="side-switch light" onClick={() => setSide('hq')} title="Switch to the HQ side: every center at once"><Icon.layers /><span className="desk-only">HQ side</span></button>}
             {perm.edit && (
               <span className="undo-group">
                 <button className="top-icon" disabled={!U.canUndo || U.busy} onClick={() => doUndo(undo, 'Undone')} title={U.canUndo ? `Undo: ${U.undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><Icon.undo /></button>
@@ -316,7 +328,7 @@ function Main({ profile: realProfile }) {
       </header>
       {viewAs && (
         <div className="viewas-bar">Viewing as <b>{roleName(viewAs)}</b>{can({ role: viewAs }).hqView ? ' – the HQ view' : ''}. Changes still use your admin rights.
-          <button className="btn small" onClick={() => { setViewAs(null); setTab(can(realProfile).switchCenter ? 'centers' : 'home'); }}>Exit</button></div>
+          <button className="btn small" onClick={() => { setViewAs(null); setTab('home'); }}>Exit</button></div>
       )}
       <nav className="nav" aria-label="Sections">
         {groups.map(([k, l, Ico, tabs]) => (
@@ -333,7 +345,7 @@ function Main({ profile: realProfile }) {
                 {l}{k === 'calls' && alerts ? <span className="badge">{alerts}</span> : null}
               </button>
             ))}
-            {perm.switchCenter && tab2 === 'home' && <span className="subnav-note">{D.center?.name} center</span>}
+            
           </div>
         </div>
       )}
@@ -346,14 +358,13 @@ function Main({ profile: realProfile }) {
             {tab2 === 'calls' && <FollowUp {...ctx} />}
             {tab2 === 'people' && <People {...ctx} />}
             {tab2 === 'departments' && <Departments {...ctx} />}
-            {tab2 === 'users' && <><Users {...ctx} R={R} realProfile={realProfile} viewAs={viewAs} setViewAs={(r) => { setViewAs(r); setTab(r && can({ role: r }).switchCenter ? 'centers' : 'home'); }} />{perm.backup && <Backup {...ctx} R={R} realProfile={realProfile} />}</>}
+            {tab2 === 'users' && <><Users {...ctx} R={R} realProfile={realProfile} viewAs={viewAs} setViewAs={pickViewAs} />{perm.backup && <Backup {...ctx} R={R} realProfile={realProfile} />}</>}
             {tab2 === 'meeting' && <Meeting {...ctx} />}
             {tab2 === 'calendar' && <CalendarPage {...ctx} />}
             {tab2 === 'leadership' && <Leadership {...ctx} />}
             {tab2 === 'plans' && <PlansPage {...ctx} />}
             {tab2 === 'messages' && <Messages {...ctx} />}
             {tab2 === 'finance' && <Finance {...ctx} />}
-            {tab2 === 'centers' && <Centers {...ctx} R={R} setCenter={(id) => { switchCenter(id); goTab('home'); }} />}
             {tab2 === 'roadmap' && !D.r4 && <div className="banner err">Linking program topics to the roadmap needs the release 4 SQL to be run in Supabase once.</div>}
             {['messages', 'finance'].includes(tab2) && !D.r3 && <div className="banner err">This page needs the release 3 SQL to be run in Supabase once.</div>}
             {tab2 === 'roadmap' && <Roadmap {...ctx} />}
@@ -382,26 +393,3 @@ export function Logo({ site, size = 36 }) {
   return <img className="logo-img" src={site.logo} alt="Gaius Ministry" width={size} height={size} onError={() => setBad(true)} />;
 }
 
-/* everything the app shows is for one center; HQ roles can switch center (or see all centers on the Centers page) */
-function scopeToCenter(R, cid) {
-  const inC = (x) => (x.center_id ?? 1) === cid;
-  const people = R.people.filter(inC);
-  const pid = new Set(people.map((p) => p.id));
-  const departments = R.departments.filter(inC);
-  const did = new Set(departments.map((d) => d.id));
-  const plans = (R.plans || []).filter(inC);
-  const planIds = new Set(plans.map((p) => p.id));
-  return {
-    ...R, all: R, people,
-    att: R.att.filter((r) => pid.has(r.person_id)),
-    programs: R.programs.filter(inC), departments,
-    members: R.members.filter((m) => did.has(m.department_id)),
-    assignments: R.assignments.filter((a) => pid.has(a.person_id)), history: R.history.filter((h) => pid.has(h.person_id)),
-    center: R.centers.find((c) => c.id === cid) || R.centers[0] || null,
-    evals: (R.evals || []).filter(inC), meetings: (R.meetings || []).filter(inC), agenda: (R.agenda || []).filter(inC),
-    plans, items: (R.items || []).filter((i) => planIds.has(i.plan_id)), plessons: (R.plessons || []).filter((x) => pid.has(x.person_id)),
-    lessonTopics: (R.lessonTopics || []).filter(inC),
-    reconcile: (R.reconcile || []).filter(inC), assets: (R.assets || []).filter(inC), ledger: (R.ledger || []).filter(inC),
-    messages: (R.messages || []).filter((m) => m.center_id == null || m.center_id === cid),
-  };
-}

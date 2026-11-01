@@ -18,7 +18,8 @@ export const roleName = (r) => ROLES.find((x) => x[0] === r)?.[1] || r;
 export const HQ_ROLES = ['admin', 'founder', 'director', 'hq_followup', 'hq_staff'];
 const EDIT = ['admin', 'coordinator', 'followup_leader'];
 
-/* opts.studio: the detailed mode (only for people who edit). profile.role may be replaced by "view as". */
+/* opts.studio: the detailed mode (every center user can switch it on; editing still follows the role).
+   opts.side: 'hq' | 'center' – the admin can use either side; HQ roles always get the HQ side. */
 export const can = (profile, opts = {}) => {
   const r = profile?.role;
   const edit = EDIT.includes(r);
@@ -37,8 +38,11 @@ export const can = (profile, opts = {}) => {
     finance: r !== 'viewer',
     meetingBanner: ['admin', 'coordinator', 'center_leader', 'followup_leader', 'leader'].includes(r),
     switchCenter: HQ_ROLES.includes(r),
-    studio: edit && !!opts.studio,
-    canStudio: edit,
+    studio: !!r && !!opts.studio,
+    canStudio: !!r,
+    // the HQ side is its own app: every center at once, HQ's own plans. The admin can switch sides.
+    hqSide: HQ_ROLES.includes(r) && (r !== 'admin' || opts.side === 'hq'),
+    hqEdit: HQ_ROLES.includes(r),        // HQ plans & activities, HQ events, HQ teaching plan, messages as HQ
     backup: ['admin', 'coordinator'].includes(r),
     restore: r === 'admin',
   };
@@ -51,7 +55,8 @@ export const ACCESS = [
   ['HQ view: every center, leaders / members / informal members only', ['founder', 'director', 'hq_followup', 'hq_staff']],
   ['Profiles and phone numbers', ['admin', 'founder', 'director', 'hq_followup', 'coordinator', 'center_leader', 'followup_leader', 'leader']],
   ['Edit: attendance, people, programs, plans, finance, calls', EDIT],
-  ['Studio mode (full detail)', EDIT],
+  ['Studio mode (full detail)', ALL],
+  ['HQ side: all centers at once, HQ plans & activities', HQ_ROLES],
   ['HQ events, HQ teaching plan, messages as HQ', HQ_ROLES],
   ['Approve users and set roles', ['admin', 'coordinator']],
   ['Backup', ['admin', 'coordinator']],

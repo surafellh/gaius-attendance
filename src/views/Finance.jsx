@@ -8,7 +8,7 @@ import Grid from './Grid';
 import { recordUpdate, recordInsert, recordDelete } from '../lib/undo';
 
 /* save / add / remove helpers for a spreadsheet table, with undo */
-function gridOps(table, extra, label, reload, setError) {
+export function gridOps(table, extra, label, reload, setError) {
   return {
     onSave: async (r, patch) => { const before = Object.fromEntries(Object.keys(patch).map((k) => [k, r[k] ?? null])), l = label(r); const { error } = await supabase.from(table).update(patch).eq('id', r.id); if (error) return setError(`Not saved: ${error.message}`); recordUpdate(table, r.id, before, patch, l); reload(); },
     onAdd: async (row) => { const { data, error } = await supabase.from(table).insert({ ...extra(row), ...row }).select().single(); if (error) { setError(`Not saved: ${error.message}`); return false; } recordInsert(table, data, label(data)); reload(); return true; },

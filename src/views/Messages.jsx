@@ -51,7 +51,7 @@ export default function Messages({ D, perm, profile, reload, setError }) {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">Messages</h1><p className="page-sub">{asHq ? `Conversations with ${D.center?.name} center. Switch center at the top, or write to every center at once.` : 'Conversations between our center and HQ.'}</p></div>
+        <div><h1 className="page-title">Messages</h1><p className="page-sub">{asHq ? `Conversations with ${D.center?.name} center. Pick a center above, or write to every center at once.` : 'Conversations between our center and HQ.'}</p></div>
       </div>
       <div className="msg-layout">
         <section className="card flush msg-threads">

@@ -252,26 +252,34 @@ export function PersonInput({ value, onChange, people, placeholder, disabled, id
 }
 
 /* Period control used by charts and reports: Semester 1 | Semester 2 | Year ▾ | Month ▾ */
+const addD = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 export function periodOf(v) {
   if (v.kind === 'month') { const [a, b] = monthRange({ year: v.year, month: v.month }); return { from: a, to: b, label: `${ET_MONTHS[v.month]} ${v.year}` }; }
-  if (v.kind === 'year') { const [a, b] = yearRange(v.year); return { from: a, to: b, label: `Year ${v.year}` }; }
+  if (v.kind === 'year') { const [a, b] = yearRange(v.year); return { from: a, to: b, label: `Whole year ${v.year}`, year: v.year }; }
+  if (v.kind === 'last12') { const t = todayIso(); return { from: addD(t, -364), to: t, label: 'Last 12 months' }; }
+  if (v.kind === 'all') return { from: '1900-01-01', to: '2999-12-31', label: 'Since records began' };
   const sem = semKey(v.no, v.year);
   return { from: semesterStart(sem), to: semesterEnd(sem), label: semName(sem), sem };
 }
+/* the period for charts and lists: a semester, the whole Ethiopian year, the last 12 months, a month, or everything */
 export function PeriodPicker({ value, onChange, years }) {
   const y = value.year;
+  const k = value.kind;
+  const yearless = k === 'last12' || k === 'all';
   return (
     <div className="period" role="group" aria-label="Period">
-      <div className="seg">
-        {[1, 2].map((no) => <button key={no} type="button" className={value.kind === 'sem' && value.no === no ? 'on' : ''} onClick={() => onChange({ kind: 'sem', no, year: y })}>Semester {no}</button>)}
+      <div className="seg period-seg">
+        {[1, 2].map((no) => <button key={no} type="button" className={k === 'sem' && value.no === no ? 'on' : ''} onClick={() => onChange({ ...value, kind: 'sem', no })}>Sem {no}</button>)}
+        <button type="button" className={k === 'year' ? 'on' : ''} onClick={() => onChange({ ...value, kind: 'year' })}>Whole year</button>
+        <button type="button" className={k === 'last12' ? 'on' : ''} onClick={() => onChange({ ...value, kind: 'last12' })} title="The last 12 months, across the new year">12 months</button>
+        <button type="button" className={k === 'all' ? 'on' : ''} onClick={() => onChange({ ...value, kind: 'all' })} title="Every Sunday since records began">All</button>
       </div>
-      <select className={`small-select ${value.kind === 'year' ? 'on' : ''}`} value={y} onChange={(e) => onChange({ ...value, year: Number(e.target.value), kind: value.kind === 'month' ? 'month' : value.kind })} aria-label="Year">
+      <select className={`small-select ${yearless ? 'dim' : ''}`} value={y} onChange={(e) => onChange({ ...value, year: Number(e.target.value), kind: yearless ? 'year' : k })} aria-label="Year">
         {years.map((yy) => <option key={yy} value={yy}>{yy}</option>)}
       </select>
-      <select className={`small-select ${value.kind === 'month' ? 'on' : ''}`} value={value.kind === 'month' ? value.month : value.kind === 'year' ? 'year' : ''} aria-label="Month"
-        onChange={(e) => (e.target.value === 'year' ? onChange({ kind: 'year', year: y }) : e.target.value === '' ? onChange({ kind: 'sem', no: value.no || 1, year: y }) : onChange({ kind: 'month', year: y, month: Number(e.target.value), no: value.no }))}>
+      <select className={`small-select ${k === 'month' ? 'on' : ''}`} value={k === 'month' ? value.month : ''} aria-label="Month"
+        onChange={(e) => (e.target.value === '' ? onChange({ ...value, kind: 'sem', no: value.no || 1 }) : onChange({ ...value, kind: 'month', month: Number(e.target.value) }))}>
         <option value="">Month…</option>
-        <option value="year">Whole year</option>
         {ET_MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
       </select>
     </div>
