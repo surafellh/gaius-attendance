@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { etLabel, semesterOf, semesterStart } from '../lib/ethiopian';
-import { SHORT, pct, personFacts, counts, groupOfRow } from '../lib/stats';
+import { SHORT, pct, personFacts, counts, groupOfRow, FOLLOWED } from '../lib/stats';
 import { WeekPicker, Icon, Initials, CAT_COLOR, MiniDots, telLink } from './common';
 
 const GROUPS = ['Leader', 'Member', 'Active Informal Member', 'Active New Comer', 'Inactive New Comer'];
@@ -138,5 +138,51 @@ function Row({ x, sel, saveMark, openPerson, canMark }) {
       </label>
       {tel ? <a className="icon-btn call" href={tel} aria-label={`Call ${x.p.name}`}><Icon.phone /></a> : <span className="icon-btn" style={{ opacity: .3 }} title="No phone number"><Icon.phone /></span>}
     </div>
+  );
+}
+
+/* HQ: the follow-up numbers on the Attendance page – leaders, members and informal members only */
+export function FollowCards({ idx, latest, personBy, openPerson }) {
+  const sel = latest;
+  const [open, setOpen] = useState(null);
+  const hi = idx.held.indexOf(sel);
+  const last6 = idx.held.slice(Math.max(0, hi - 5), hi + 1);
+  const semStart = semesterStart(semesterOf(sel));
+  const people = useMemo(() => (idx.bySunday[sel] || []).filter((r) => personBy[r.person_id] && FOLLOWED.includes(r.category)).map((r) => {
+    const p = personBy[r.person_id];
+    const marks = idx.byPerson[p.id] || {};
+    return { p, r, f: personFacts(p, marks, idx.held, sel, semStart), dots: last6.map((s) => marks[s]?.status) };
+  }), [idx, sel, personBy, semStart, last6.join()]); // eslint-disable-line
+  const LISTS = [
+    { key: 'dropped', label: 'Came last Sunday, missed this one', accent: 'var(--warn)', test: (x) => x.f.lastWeek === 'Present' && x.f.thisWeek === 'Absent' },
+    { key: 'consistent', label: '…of them were coming 4+ weeks in a row', accent: 'var(--absent)', test: (x) => x.f.lastWeek === 'Present' && x.f.thisWeek === 'Absent' && x.f.consistent },
+    { key: 'two', label: 'Missed 2 Sundays in a row', accent: 'var(--warn)', test: (x) => x.f.streak === 2 },
+    { key: 'three', label: 'Missed 3 or more in a row', accent: 'var(--absent)', test: (x) => x.f.streak >= 3 },
+  ];
+  const cur = LISTS.find((l) => l.key === open);
+  return (
+    <section className="card">
+      <div className="card-head"><div><div className="card-title">Follow-up · {etLabel(sel, true)}</div><div className="card-sub">Leaders, members and informal members. Tap a number to see who.</div></div></div>
+      <div className="fu-cards">
+        {LISTS.map((l) => (
+          <button key={l.key} className={`fu-card ${open === l.key ? 'on' : ''}`} style={{ '--accent': l.accent }} onClick={() => setOpen(open === l.key ? null : l.key)}>
+            <b>{people.filter(l.test).length}</b><span>{l.label}</span>
+          </button>
+        ))}
+      </div>
+      {cur && (
+        <div style={{ marginTop: 8 }}>
+          {people.filter(cur.test).length === 0 ? <p className="muted small">Nobody.</p> : people.filter(cur.test).map((x) => (
+            <div key={x.p.id} className="list-row">
+              <Initials name={x.p.name} category={x.r.category} />
+              <button className="pinfo" onClick={() => openPerson(x.p.id)}>
+                <span className="pname">{x.p.name}</span>
+                <span className="pmeta"><span>{SHORT[groupOfRow(x.r)]}</span>{x.f.consistent && x.f.thisWeek === 'Absent' && <span className="tag bad">was consistent</span>}{x.f.streak >= 2 && <span className="tag">{x.f.streak} weeks</span>}<MiniDots statuses={x.dots} /></span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

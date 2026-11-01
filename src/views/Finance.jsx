@@ -3,7 +3,18 @@ import { supabase } from '../lib/supabase';
 import { etLabel, todayIso, semesterOf, semName, semesterStart, semesterEnd, WEEKDAYS, SEMESTERS } from '../lib/ethiopian';
 import { deptName, deptColor, semesterItems, itemWhen, birr } from '../lib/plans';
 import { toExcel, toPdf } from '../lib/exports';
-import { Sheet, Icon } from './common';
+import { Icon } from './common';
+import Grid from './Grid';
+import { recordUpdate, recordInsert, recordDelete } from '../lib/undo';
+
+/* save / add / remove helpers for a spreadsheet table, with undo */
+function gridOps(table, extra, label, reload, setError) {
+  return {
+    onSave: async (r, patch) => { const before = Object.fromEntries(Object.keys(patch).map((k) => [k, r[k] ?? null])), l = label(r); const { error } = await supabase.from(table).update(patch).eq('id', r.id); if (error) return setError(`Not saved: ${error.message}`); recordUpdate(table, r.id, before, patch, l); reload(); },
+    onAdd: async (row) => { const { data, error } = await supabase.from(table).insert({ ...extra(row), ...row }).select().single(); if (error) { setError(`Not saved: ${error.message}`); return false; } recordInsert(table, data, label(data)); reload(); return true; },
+    onDelete: async (r0) => { const r = { ...r0 }; const { error } = await supabase.from(table).delete().eq('id', r.id); if (error) return setError(`Not deleted: ${error.message}`); recordDelete(table, r, label(r)); reload(); },
+  };
+}
 
 const CONDITIONS = ['Good', 'Needs repair', 'Broken', 'Lost'];
 const IN_CATS = ['From HQ', 'Contribution / offering', 'Fund-raising', 'Donation', 'Other'];
@@ -73,7 +84,6 @@ function CenterInfo({ D, perm, reload, setError, idx, latest, summaries }) {
 }
 
 function Assets({ D, perm, reload, setError }) {
-  const [edit, setEdit] = useState(null);
   const [q, setQ] = useState('');
   const list = D.assets.filter((a) => !q || [a.name, a.category, a.location].some((v) => (v || '').toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name));
   const value = list.reduce((n, a) => n + Number(a.value || 0) * (Number(a.quantity) || 1), 0);
@@ -85,65 +95,26 @@ function Assets({ D, perm, reload, setError }) {
         <div><div className="card-title">What the center owns ({list.length})</div><div className="card-sub">For the property count HQ asks for. Total value {birr(value)}.</div></div>
         <div className="row">
           <button className="btn ghost small" onClick={() => toExcel(rep)}>Excel</button><button className="btn ghost small" onClick={() => toPdf(rep)}>PDF</button>
-          {perm.mark && <button className="btn lime small" onClick={() => setEdit({ name: '', category: '', quantity: 1, condition: 'Good', location: '', source: '', acquired_on: '', value: '', notes: '' })}><Icon.plus width="16" height="16" /> Add</button>}
         </div>
       </div>
       <label className="search" style={{ marginBottom: 10 }}><Icon.search /><input placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-      <div style={{ overflowX: 'auto' }}>
-        <table className="gtable left act-table">
-          <thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Condition</th><th>Where</th><th>Source</th></tr></thead>
-          <tbody>
-            {list.map((a) => (
-              <tr key={a.id} onClick={() => perm.mark && setEdit(a)}>
-                <td><b>{a.name}</b>{a.notes && <div className="tiny muted">{a.notes}</div>}</td><td>{a.category}</td><td className="num">{a.quantity}</td>
-                <td><span className={`tag ${a.condition === 'Good' ? 'ok' : a.condition === 'Needs repair' ? 'sun' : 'bad'}`}>{a.condition}</span></td><td>{a.location}</td><td>{a.source}</td>
-              </tr>
-            ))}
-            {list.length === 0 && <tr><td colSpan={6} className="muted">Nothing recorded yet. Add the items the center has (chairs, sound system, guitar, water tank…).</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      {edit && <AssetSheet a={edit} D={D} onClose={() => setEdit(null)} reload={reload} setError={setError} />}
+      <Grid canEdit={perm.mark} rows={list} empty="Nothing recorded yet." addLabel="Add item" {...gridOps('assets', () => ({ center_id: D.center?.id || 1 }), (r) => `asset “${r.name}”`, reload, setError)}
+        columns={[
+          { key: 'name', label: 'Item', required: true, width: 190 },
+          { key: 'category', label: 'Category', width: 130 },
+          { key: 'quantity', label: 'Qty', type: 'number', width: 70 },
+          { key: 'condition', label: 'Condition', type: 'select', options: CONDITIONS.map((c) => [c, c]), width: 130 },
+          { key: 'location', label: 'Where', width: 130 },
+          { key: 'source', label: 'Source', width: 110 },
+          { key: 'acquired_on', label: 'Since', type: 'date', width: 150 },
+          { key: 'value', label: 'Value each', type: 'number', width: 100 },
+          { key: 'notes', label: 'Notes', width: 180 },
+        ]} />
     </section>
   );
 }
-function AssetSheet({ a, D, onClose, reload, setError }) {
-  const [f, setF] = useState({ ...a, acquired_on: a.acquired_on || '', value: a.value ?? '' });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  async function save(e) {
-    e.preventDefault();
-    const row = { center_id: D.center?.id || 1, name: f.name.trim(), category: f.category || null, quantity: Number(f.quantity) || 1, condition: f.condition, location: f.location || null, source: f.source || null, acquired_on: f.acquired_on || null, value: f.value === '' ? null : Number(f.value), notes: f.notes || null, updated_at: new Date().toISOString() };
-    const { error } = a.id ? await supabase.from('assets').update(row).eq('id', a.id) : await supabase.from('assets').insert(row);
-    if (error) return setError(`Not saved: ${error.message}`);
-    reload(); onClose();
-  }
-  async function remove() { if (!window.confirm('Remove this item?')) return; const { error } = await supabase.from('assets').delete().eq('id', a.id); if (error) setError(error.message); else { reload(); onClose(); } }
-  return (
-    <Sheet title={a.id ? a.name : 'Add an item'} onClose={onClose}>
-      <form className="form" onSubmit={save}>
-        <div className="row2"><label>Item<input value={f.name} onChange={set('name')} required placeholder="e.g. Water tank 90 L" /></label><label>Category<input value={f.category || ''} onChange={set('category')} list="asset-cats" placeholder="Furniture, sound, kitchen…" /></label></div>
-        <datalist id="asset-cats">{[...new Set(D.assets.map((x) => x.category).filter(Boolean)), 'Furniture', 'Sound & music', 'Kitchen', 'Cleaning', 'Stationery'].map((c) => <option key={c} value={c} />)}</datalist>
-        <div className="row3">
-          <label>Quantity<input inputMode="numeric" value={f.quantity} onChange={set('quantity')} /></label>
-          <label>Condition<select value={f.condition} onChange={set('condition')}>{CONDITIONS.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label>Value each (birr)<input inputMode="numeric" value={f.value} onChange={set('value')} /></label>
-        </div>
-        <div className="row3">
-          <label>Where<input value={f.location || ''} onChange={set('location')} /></label>
-          <label>Source<input value={f.source || ''} onChange={set('source')} list="asset-src" /></label>
-          <label>Since<input type="date" value={f.acquired_on} onChange={set('acquired_on')} /></label>
-        </div>
-        <datalist id="asset-src"><option value="HQ" /><option value="Purchased" /><option value="Donated" /></datalist>
-        <label>Notes<input value={f.notes || ''} onChange={set('notes')} /></label>
-        <div className="row-actions">{a.id ? <button type="button" className="btn danger small" onClick={remove}>Remove</button> : <span />}<button className="btn lime">Save</button></div>
-      </form>
-    </Sheet>
-  );
-}
-
 function Money({ D, today, perm, reload, setError }) {
   const [sem, setSem] = useState(semesterOf(today));
-  const [adding, setAdding] = useState(null);
   const from = semesterStart(sem), to = semesterEnd(sem);
   const list = D.ledger.filter((x) => x.entry_date >= from && x.entry_date <= to).sort((a, b) => b.entry_date.localeCompare(a.entry_date));
   const inSum = list.filter((x) => x.direction === 'in').reduce((n, x) => n + Number(x.amount), 0);
@@ -162,7 +133,6 @@ function Money({ D, today, perm, reload, setError }) {
         <select className="small-select" value={sem} onChange={(e) => setSem(e.target.value)}>{SEMESTERS.filter((x) => semesterStart(x) <= today).reverse().slice(0, 4).map((x) => <option key={x} value={x}>{semName(x)}</option>)}</select>
         <div className="row">
           <button className="btn ghost small" onClick={() => toExcel(rep)}>Excel</button><button className="btn ghost small" onClick={() => toPdf(rep)}>PDF</button>
-          {perm.mark && <><button className="btn lime small" onClick={() => setAdding('in')}>+ Money in</button><button className="btn ghost small" onClick={() => setAdding('out')}>− Money out</button></>}
         </div>
       </div>
       <section className="kpis">
@@ -170,19 +140,19 @@ function Money({ D, today, perm, reload, setError }) {
         <div className="kpi"><span className="kpi-label">In · {semName(sem)}</span><span className="kpi-val">{inSum.toLocaleString()}</span><span className="kpi-foot">birr</span></div>
         <div className="kpi"><span className="kpi-label">Out · {semName(sem)}</span><span className="kpi-val">{outSum.toLocaleString()}</span><span className="kpi-foot">birr</span></div>
       </section>
-      <div className="dash-grid">
+      <div className="page" style={{ gap: 14 }}>
         <section className="card">
           <div className="card-head"><div><div className="card-title">Entries</div><div className="card-sub">Record money from HQ and what was spent, with the receipt number.</div></div></div>
-          <ul className="ev-list">
-            {list.map((x) => (
-              <li key={x.id} className="money-row">
-                <span className={`money-amt ${x.direction}`}>{x.direction === 'in' ? '+' : '−'}{Number(x.amount).toLocaleString()}</span>
-                <span style={{ minWidth: 0, flex: 1 }}><b>{x.description || x.category}</b><span className="prog-meta" style={{ display: 'block' }}>{etLabel(x.entry_date, true)} · {x.category}{x.department_id ? ` · ${deptName(D, x.department_id)}` : ''}{x.receipt_ref ? ` · receipt ${x.receipt_ref}` : ''}</span></span>
-                {perm.mark && <button className="icon-btn" aria-label="Delete entry" onClick={async () => { if (window.confirm('Delete this entry?')) { const { error } = await supabase.from('ledger').delete().eq('id', x.id); if (error) setError(error.message); else reload(); } }}><Icon.trash width="16" height="16" /></button>}
-              </li>
-            ))}
-            {list.length === 0 && <li className="muted small">No entries in {semName(sem)} yet.</li>}
-          </ul>
+          <Grid canEdit={perm.mark} rows={list} empty={`No entries in ${semName(sem)} yet.`} addLabel="Add entry" {...gridOps('ledger', () => ({ center_id: D.center?.id || 1 }), (r) => `money entry ${r.description || r.category || ''}`, reload, setError)}
+            columns={[
+              { key: 'entry_date', label: 'Date', type: 'date', required: true, width: 150 },
+              { key: 'direction', label: 'In / out', type: 'select', required: true, options: [['in', 'In +'], ['out', 'Out −']], width: 90 },
+              { key: 'amount', label: 'Amount (birr)', type: 'number', required: true, width: 110 },
+              { key: 'category', label: 'Category', type: 'select', options: [...IN_CATS, ...OUT_CATS].map((c) => [c, c]), width: 150 },
+              { key: 'department_id', label: 'Department', type: 'select', options: D.departments.map((d) => [d.id, d.name]), width: 150 },
+              { key: 'description', label: 'Description', width: 200 },
+              { key: 'receipt_ref', label: 'Receipt', width: 100 },
+            ]} />
         </section>
         <section className="card">
           <div className="card-head"><div><div className="card-title">Planned budget vs spent</div><div className="card-sub">From the department plans and the “money out” entries.</div></div></div>
@@ -192,38 +162,6 @@ function Money({ D, today, perm, reload, setError }) {
           </table>
         </section>
       </div>
-      {adding && <EntrySheet dir={adding} D={D} sem={sem} onClose={() => setAdding(null)} reload={reload} setError={setError} />}
     </>
-  );
-}
-function EntrySheet({ dir, D, sem, onClose, reload, setError }) {
-  const [f, setF] = useState({ entry_date: todayIso(), amount: '', category: dir === 'in' ? IN_CATS[0] : OUT_CATS[1], department_id: '', plan_item_id: '', description: '', receipt_ref: '' });
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const its = semesterItems(D, sem).filter((i) => Number(i.budget) > 0 && (!f.department_id || i.plan.department_id === Number(f.department_id)));
-  async function save(e) {
-    e.preventDefault();
-    const it = its.find((i) => String(i.id) === String(f.plan_item_id));
-    const { error } = await supabase.from('ledger').insert({ center_id: D.center?.id || 1, direction: dir, entry_date: f.entry_date, amount: Number(f.amount), category: f.category,
-      department_id: f.department_id ? Number(f.department_id) : it?.plan.department_id || null, plan_item_id: it?.id || null, description: f.description || it?.plan.title || null, receipt_ref: f.receipt_ref || null });
-    if (error) return setError(`Not saved: ${error.message}`);
-    reload(); onClose();
-  }
-  return (
-    <Sheet title={dir === 'in' ? 'Money in' : 'Money out'} onClose={onClose}>
-      <form className="form" onSubmit={save}>
-        <div className="row2">
-          <label>Date {f.entry_date && <span className="faint">{etLabel(f.entry_date, true)}</span>}<input type="date" value={f.entry_date} onChange={set('entry_date')} required /></label>
-          <label>Amount (birr)<input inputMode="decimal" value={f.amount} onChange={set('amount')} required /></label>
-        </div>
-        <div className="row2">
-          <label>Category<select value={f.category} onChange={set('category')}>{(dir === 'in' ? IN_CATS : OUT_CATS).map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label>Department<select value={f.department_id} onChange={set('department_id')}><option value="">—</option>{D.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-        </div>
-        {dir === 'out' && its.length > 0 && <label>For a planned item (optional)<select value={f.plan_item_id} onChange={set('plan_item_id')}><option value="">—</option>{its.map((i) => <option key={i.id} value={i.id}>{i.plan.title.slice(0, 50)} · {itemWhen(i)} · {Number(i.budget).toLocaleString()}</option>)}</select></label>}
-        <label>Description<input value={f.description} onChange={set('description')} /></label>
-        <label>Receipt number<input value={f.receipt_ref} onChange={set('receipt_ref')} /></label>
-        <button className="btn lime wide">Save</button>
-      </form>
-    </Sheet>
   );
 }

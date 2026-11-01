@@ -14,7 +14,8 @@ const GROUPS = [
 /* Teaching roadmap: who has taken which lesson, and what each person still needs.
    Taken = ticked here, or present on a Sunday whose program topic is linked to the lesson, or their first teaching. */
 export default function Roadmap({ D, idx, perm, openPerson, reload, setError }) {
-  const [groups, setGroups] = useState(() => GROUPS.map((g) => g[0]));
+  const G = perm.hqView ? GROUPS.filter((g) => g[0] !== 'New Comer') : GROUPS; // HQ: leaders, members, informal members
+  const [groups, setGroups] = useState(() => G.map((g) => g[0]));
   const [need, setNeed] = useState('');           // "took:<id>" or "needs:<id>"
   const flip = (k) => setGroups((g) => (g.includes(k) ? (g.length > 1 ? g.filter((x) => x !== k) : g) : [...g, k]));
   const [manage, setManage] = useState(false);
@@ -23,7 +24,7 @@ export default function Roadmap({ D, idx, perm, openPerson, reload, setError }) 
   const cid = D.center?.id || 1;
   const lessons = D.lessons.filter((l) => l.active && (l.center_id == null || l.center_id === cid));
   const li = useMemo(() => lessonIndex(D, lessons, idx, cid), [D, idx, cid]); // eslint-disable-line
-  const test = (p) => GROUPS.some(([k, , t]) => groups.includes(k) && t(p));
+  const test = (p) => G.some(([k, , t]) => groups.includes(k) && t(p));
   const base = D.people.filter((p) => !p.archived && test(p)).sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9));
   let people = base;
   if (need) { const [mode, id] = need.split(':'); const l = lessons.find((x) => String(x.id) === id); if (l) people = people.filter((p) => (mode === 'took') === !!li.took(p, l)); }
@@ -57,8 +58,8 @@ export default function Roadmap({ D, idx, perm, openPerson, reload, setError }) 
       {perm.manage && linked === 0 && <div className="banner">No Sunday programs are linked to the roadmap yet. Use <b>Choose roadmap teachings</b> to pick which program topics are roadmap lessons – everyone who was present those Sundays is then counted.</div>}
       <div className="toolbar row" style={{ flexWrap: 'wrap' }}>
         <div className="chips">
-          {GROUPS.map(([k, l, t]) => <button key={k} aria-pressed={groups.includes(k)} className={`chipbtn ${groups.includes(k) ? 'on' : ''}`} onClick={() => flip(k)}>{groups.includes(k) ? '✓ ' : ''}{l} <span className="n">{D.people.filter((p) => !p.archived && t(p)).length}</span></button>)}
-          <button className="chipbtn" onClick={() => setGroups(GROUPS.map((g) => g[0]))}>Everyone</button>
+          {G.map(([k, l, t]) => <button key={k} aria-pressed={groups.includes(k)} className={`chipbtn ${groups.includes(k) ? 'on' : ''}`} onClick={() => flip(k)}>{groups.includes(k) ? '✓ ' : ''}{l} <span className="n">{D.people.filter((p) => !p.archived && t(p)).length}</span></button>)}
+          <button className="chipbtn" onClick={() => setGroups(G.map((g) => g[0]))}>Everyone</button>
         </div>
         <select className="small-select" value={need} onChange={(e) => setNeed(e.target.value)} aria-label="Filter by lesson">
           <option value="">Any lesson</option>

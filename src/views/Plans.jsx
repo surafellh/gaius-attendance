@@ -5,24 +5,30 @@ import { parseAnyDate, parseMonths } from '../lib/teaching';
 import { deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen, effStatus, needsReason, isPostponed } from '../lib/plans';
 import { toExcel, toPdf, tableText, readSheet, rowsUnder, col, downloadTemplate } from '../lib/exports';
 import { Sheet, Icon } from './common';
+import Grid from './Grid';
+import { recordUpdate } from '../lib/undo';
 
 export default function PlansPage(props) {
   const { D, today, perm } = props;
-  const [tab, setTab] = useState('plans');
+  const TABS = perm.hqView ? [['dates', 'Planned dates'], ['budget', 'Budget']]
+    : [['plans', 'Plans'], ['budget', 'Budget'], ['request', 'Month-end request'], ...(perm.studio ? [['report', 'Done / not done']] : [])];
+  const [tab0, setTab] = useState(TABS[0][0]);
+  const tab = TABS.some(([k]) => k === tab0) ? tab0 : TABS[0][0];
   const [sem, setSem] = useState(semesterOf(today));
   const sems = SEMESTERS.filter((s) => semesterStart(s) <= addDays(today, 400)).reverse();
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">Plans &amp; budget</h1><p className="page-sub">Each department’s 6-month action &amp; budget plan. Mark items done or not done (with the reason) and move them when dates change.</p></div>
+        <div><h1 className="page-title">Plans &amp; budget</h1><p className="page-sub">{perm.hqView ? 'Each department’s planned activities, dates and budget.' : 'Each department’s 6-month action & budget plan. Mark items done or not done (with the reason) and move them when dates change.'}</p></div>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <select className="small-select" value={sem} onChange={(e) => setSem(e.target.value)} aria-label="Semester">{sems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select>
           <div className="seg">
-            {[['plans', 'Plans'], ['budget', 'Budget'], ['request', 'Month-end request'], ['report', 'Done / not done']].map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+            {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
           </div>
         </div>
       </div>
       {tab === 'plans' && <PlanList {...props} sem={sem} />}
+      {tab === 'dates' && <PlannedDates {...props} sem={sem} />}
       {tab === 'budget' && <Budget {...props} sem={sem} />}
       {tab === 'request' && <MonthRequest {...props} sem={sem} />}
       {tab === 'report' && <DoneReport {...props} sem={sem} />}
@@ -38,6 +44,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
   const [item, setItem] = useState(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [view, setView] = useState(perm.mark ? 'table' : 'cards');
   const items = useMemo(() => semesterItems(D, sem), [D, sem]);
   const plans = D.plans.filter((p) => p.semester === sem);
   const byDept = D.departments.map((d) => ({ d, plans: plans.filter((p) => p.department_id === d.id) })).filter((x) => x.plans.length);
@@ -48,12 +55,29 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
   return (
     <>
       <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <div className="seg" style={{ marginRight: 'auto' }}><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button><button className={view === 'cards' ? 'on' : ''} onClick={() => setView('cards')}>By department</button></div>
         <button className="btn ghost" onClick={() => toExcel(plansList(D, sem))}><Icon.download width="18" height="18" /> Download plans</button>
         {perm.mark && <button className="btn ghost" onClick={() => setImporting(true)}><Icon.grid width="18" height="18" /> Import from Excel</button>}
         {perm.mark && <button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Add a plan</button>}
       </div>
       {plans.length === 0 && <div className="card empty">No plans for {semName(sem)} yet.{perm.mark ? ' Add them one by one, or fill the Excel template and import it.' : ''}</div>}
-      <div className="dept-plans">
+      {view === 'table' && (
+        <section className="card flush">
+          <Grid canEdit={perm.mark} rows={[...plans].sort((a, b) => D.departments.findIndex((d) => d.id === a.department_id) - D.departments.findIndex((d) => d.id === b.department_id))} empty="No plans this semester."
+            onSave={async (p, patch) => { const before = Object.fromEntries(Object.keys(patch).map((k) => [k, p[k] ?? null])), t = p.title; const { error } = await supabase.from('plans').update(patch).eq('id', p.id); if (error) return setError(`Not saved: ${error.message}`); recordUpdate('plans', p.id, before, patch, `plan “${t}”`); reload(); }}
+            columns={[
+              { key: 'department_id', label: 'Department', type: 'select', required: true, options: D.departments.map((d) => [d.id, d.name]), width: 160 },
+              { key: 'title', label: 'Activity', required: true, width: 260 },
+              { key: 'timing_note', label: 'When (as planned)', width: 150 },
+              { key: 'dates', label: 'Dates', ro: true, width: 210, render: (p) => <button className="link small" style={{ textAlign: 'left' }} onClick={() => setOpen(p)}>{items.filter((i) => i.plan_id === p.id).slice(0, 4).map((i) => itemWhen(i)).join(' · ') || 'Add dates'}{items.filter((i) => i.plan_id === p.id).length > 4 ? ' …' : ''}</button> },
+              { key: 'budget', label: 'Budget (birr)', type: 'number', width: 110 },
+              { key: 'budget_note', label: 'Budget detail', width: 180 },
+              { key: 'details', label: 'Details', width: 200 },
+            ]} />
+          {perm.mark && <p className="tiny muted" style={{ margin: '0 14px 12px' }}>Add new plans with “Add a plan” or Import from Excel; tap the dates to mark them done or move them.</p>}
+        </section>
+      )}
+      {view === 'cards' && <div className="dept-plans">
         {byDept.map(({ d, plans: ps }) => {
           const its = items.filter((i) => i.plan.department_id === d.id);
           const s = stat(its);
@@ -88,7 +112,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
             </section>
           );
         })}
-      </div>
+      </div>}
       <div className="grid-legend">
         <span className="row"><i className="idot done" /> Done</span><span className="row"><i className="idot not_done" /> Not done</span>
         <span className="row"><i className="idot overdue" /> Date passed, not marked</span><span className="row"><i className="idot ahead" /> Coming up</span>
@@ -558,5 +582,30 @@ function DoneReport({ D, today, sem, perm, reload, setError }) {
       </section>
       {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
     </>
+  );
+}
+
+/* HQ: what each department planned and when, with the budget – no done / not done */
+function PlannedDates({ D, sem }) {
+  const items = useMemo(() => semesterItems(D, sem).filter((i) => i.status !== 'cancelled').sort((a, b) => a.due.localeCompare(b.due)), [D, sem]);
+  const total = items.reduce((n, i) => n + Number(i.budget || 0), 0);
+  const rep = { title: `Gaius ${D.center?.name || ''} – planned activities, ${semName(sem)}`, file: `Gaius_${D.center?.name || ''}_planned_${sem.replace(' ', '_')}`, sub: `${items.length} dates · ${birr(total)}`,
+    sheets: [{ name: 'Planned dates', head: ['When', 'Department', 'Activity', 'Budget'], body: items.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.label ? ` – ${i.label}` : ''), Number(i.budget) || '']) }] };
+  return (
+    <section className="card flush">
+      <div className="card-head" style={{ padding: '14px 16px 0' }}>
+        <div><div className="card-title">Planned activities · {semName(sem)}</div><div className="card-sub">{items.length} dates · {birr(total)} planned</div></div>
+        <div className="row"><button className="btn ghost small" onClick={() => toExcel(rep)}>Excel</button><button className="btn ghost small" onClick={() => toPdf(rep)}>PDF</button></div>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="gtable left act-table">
+          <thead><tr><th>When</th><th>Department</th><th>Activity</th><th>Budget</th></tr></thead>
+          <tbody>{items.map((i) => (
+            <tr key={i.id}><td style={{ whiteSpace: 'nowrap' }}>{itemWhen(i)}</td><td><span className="dot" style={{ background: deptColor(D, i.plan.department_id) }} /> {deptName(D, i.plan.department_id)}</td><td className="am">{i.plan.title}{i.label ? ` – ${i.label}` : ''}</td><td className="num">{Number(i.budget) ? birr(i.budget) : '–'}</td></tr>
+          ))}
+          {items.length === 0 && <tr><td colSpan={4} className="muted">No plans this semester.</td></tr>}</tbody>
+        </table>
+      </div>
+    </section>
   );
 }

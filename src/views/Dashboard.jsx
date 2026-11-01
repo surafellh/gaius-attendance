@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterOf, semNo, semYear } from '../lib/ethiopian';
-import { pct, counts, readiness, READY_RATE } from '../lib/stats';
+import { pct, counts, readiness, READY_RATE, FOLLOWED } from '../lib/stats';
 import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon, PeriodPicker, periodOf } from './common';
 import { StackedBars, RateLines } from './Charts';
 import { meetingInfo, whenText } from './Meeting';
@@ -16,13 +16,14 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const [period, setPeriod] = useState(() => ({ kind: 'sem', no: semNo(semesterOf(sel)), year: semYear(semesterOf(sel)) }));
   const P = periodOf(period);
   const [hidden, setHidden] = useState(() => new Set());
+  const hq = perm.hqView;   // HQ lens: leaders, members and informal members; no new comer names or statuses
   const [rankGroup, setRankGroup] = useState('Member');
   const [rankDir, setRankDir] = useState('top');
   const [ncView, setNcView] = useState('since');
   const [expanded, setExpanded] = useState(false);
   const [ov, setOv] = useState({});             // a card's own period, overriding the page period
   const Pf = (card) => (ov[card] ? periodOf({ ...ov[card], year: ov[card].year ?? period.year }) : P);
-  const cardPeriod = (card) => <CardPeriod value={ov[card]} year={period.year} pageLabel={P.label} onChange={(v) => setOv((o) => ({ ...o, [card]: v }))} />;
+  const cardPeriod = (card) => !perm.studio ? null : <CardPeriod value={ov[card]} year={period.year} pageLabel={P.label} onChange={(v) => setOv((o) => ({ ...o, [card]: v }))} />;
   const weeksOf = (Pc) => idx.held.filter((s) => s >= Pc.from && s <= Pc.to);
 
   const heldIdx = idx.held.indexOf(sel);
@@ -46,7 +47,8 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   });
 
   const rows = idx.bySunday[sel] || [];
-  const dropped = rows.filter((r) => counts(r) && personBy[r.person_id] && r.status === 'Absent' && idx.byPerson[r.person_id]?.[prevS]?.status === 'Present').length;
+  const callable = (r) => (hq ? FOLLOWED.includes(r.category) : counts(r));
+  const dropped = rows.filter((r) => callable(r) && personBy[r.person_id] && r.status === 'Absent' && idx.byPerson[r.person_id]?.[prevS]?.status === 'Present').length;
   const firstTimers = D.people.filter((p) => p.week_joined === sel).length;
 
   // new comers in the period
@@ -141,6 +143,18 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           <span className="kpi-val">{cur.present}</span>
           <span className="kpi-foot"><Delta d={prev ? cur.present - prev.present : null} /> vs last Sunday</span>
         </div>
+        {hq ? <>
+          <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />
+          <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />
+          <Kpi label="Informal members" color={CAT_COLOR['Active Informal Member']} val={cur.informal} foot="present" />
+          <Kpi label="Others" color={CAT_COLOR['New Comer']} val={cur.present - leaders.present - members.present - cur.informal} foot="senior leaders and new comers" />
+          <Kpi label="First-time comers" color="var(--lime-strong)" val={firstTimers} foot={`came for the first time on ${etLabel(sel)}`} />
+          <button className="kpi" onClick={() => go('attendance')} style={{ cursor: 'pointer' }}>
+            <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
+            <span className="kpi-val">{dropped}</span>
+            <span className="kpi-foot">leaders, members &amp; informal · came last week, missed this one</span>
+          </button>
+        </> : <>
         <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={<><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</>} />
         <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />
         <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />
@@ -150,6 +164,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           <span className="kpi-val">{dropped}</span>
           <span className="kpi-foot">came last week, missed this one ›</span>
         </button>
+        </>}
       </section>
 
       <div className="dash-grid">
@@ -192,7 +207,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </div>
         </section>
 
-        <section className="card">
+        {perm.studio && <section className="card">
           <div className="card-head"><div><div className="card-title">Groups on {etLabel(sel)}</div><div className="card-sub">Compared with the 4 Sundays before.</div></div></div>
           <table className="gtable">
             <thead><tr><th>Group</th><th>Came</th><th>Rate</th><th>4-wk avg</th></tr></thead>
@@ -214,7 +229,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               <tr className="total"><td>Total present</td><td className="num">{cur.present}</td><td className="num">{pct(cur.rate)}<span className="tiny muted"> L+M</span></td><td /></tr>
             </tbody>
           </table>
-        </section>
+        </section>}
 
         <section className="card">
           <div className="card-head"><div><div className="card-title">New comers · {PN.label}</div><div className="card-sub">Ready = 6 months since the first visit and at least {Math.round(READY_RATE * 100)}% since then. Leaders still decide.</div></div>{cardPeriod('nc')}</div>
@@ -227,7 +242,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               </div>
             ))}
           </div>
-          {pipeline.ready.length > 0 && (
+          {pipeline.ready.length > 0 && !hq && (
             <div className="chips" style={{ marginTop: 12 }}>
               {pipeline.ready.map((p) => <button key={p.id} className="chipbtn" onClick={() => openPerson(p.id)}>{p.name}</button>)}
             </div>
@@ -287,7 +302,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </div>
           <div className="rank-tools">
             <div className="chips" style={{ flexWrap: 'wrap' }}>
-              {RANK_GROUPS.map(([k, l]) => <button key={k} className={`chipbtn ${rankGroup === k ? 'on' : ''}`} onClick={() => { setRankGroup(k); setExpanded(false); }}>{l}</button>)}
+              {RANK_GROUPS.filter(([k]) => !hq || ['Member', 'Leader'].includes(k)).map(([k, l]) => <button key={k} className={`chipbtn ${rankGroup === k ? 'on' : ''}`} onClick={() => { setRankGroup(k); setExpanded(false); }}>{l}</button>)}
             </div>
             {isNC && (
               <div className="seg">
@@ -312,6 +327,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           {ranked.list.length > 8 && <button className="btn ghost wide" onClick={() => setExpanded(!expanded)}>{expanded ? 'Show fewer' : `Show all ${ranked.list.length}`}</button>}
           {ranked.tooNew.length > 0 && <p className="small muted" style={{ marginTop: 10 }}>Too early to rank (under 4 Sundays): {ranked.tooNew.map((x) => x.p.name).join(', ')}</p>}
         </section>
+        {hq && <Promising idx={idx} rows={rows} personBy={personBy} sel={sel} />}
       </div>
       <p className="muted tiny">Each Sunday keeps the group people had on that day, so past numbers don't change later. {fmtGreg(sel)}.</p>
     </div>
@@ -361,5 +377,30 @@ function CardPeriod({ value, year, pageLabel, onChange }) {
       <option value="s1">Semester 1 · {year}</option><option value="s2">Semester 2 · {year}</option><option value="y">Year {year}</option>
       {ET_MONTHS.map((m, i) => <option key={m} value={`m${i}`}>{m} {year}</option>)}
     </select>
+  );
+}
+
+/* HQ: the new comers coming most faithfully since their first visit – the members of tomorrow */
+function Promising({ idx, rows, personBy, sel }) {
+  const list = rows.filter((r) => r.category === 'New Comer' && r.active && personBy[r.person_id]).map((r) => {
+    const p = personBy[r.person_id];
+    const x = readiness(p, idx.byPerson[p.id] || {}, idx.held, sel);
+    return { p, x };
+  }).filter(({ x }) => x.weeksIn >= 4 && x.sinceRate != null).sort((a, b) => b.x.sinceRate - a.x.sinceRate || b.x.weeksIn - a.x.weeksIn).slice(0, 6);
+  return (
+    <section className="card">
+      <div className="card-head"><div><div className="card-title">Promising members</div><div className="card-sub">New comers coming most faithfully since their first visit (at least 4 Sundays).</div></div></div>
+      {list.length === 0 ? <p className="muted small">No new comers with 4 or more Sundays yet.</p> : (
+        <ol className="rank-list">
+          {list.map(({ p, x }, i) => (
+            <li key={p.id} className="rank-item">
+              <span className="rank-pos">{i + 1}</span>
+              <span className="row" style={{ minWidth: 0 }}><Initials name={p.name} category="New Comer" /><span className="rank-name">{p.name}{x.ready && <span className="tag ok" style={{ marginLeft: 6 }}>ready</span>}<small>{x.sincePresent} of {x.weeksIn} Sundays since {etLabel(x.first)}</small></span></span>
+              <Meter v={x.sinceRate} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

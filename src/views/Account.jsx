@@ -13,7 +13,7 @@ export function applyPrefs(p) {
 }
 
 /* Account & settings: who you are, personal display settings, password, sign out */
-export default function AccountPanel({ profile, perm, onExport, go }) {
+export default function AccountPanel({ profile, perm, onExport, go, studio, setMode }) {
   const [prefs, setPrefs] = useState(loadPrefs);
   const [name, setName] = useState(profile.full_name || '');
   const [pw, setPw] = useState('');
@@ -36,13 +36,20 @@ export default function AccountPanel({ profile, perm, onExport, go }) {
       {msg && <div className="banner ok">{msg}</div>}
       <div className="form-section">Quick actions</div>
       <div className="row2">
-        <button type="button" className="btn lime" onClick={onExport}><Icon.download width="18" height="18" /> Export a report</button>
-        {perm.users ? <button type="button" className="btn ghost" onClick={() => go('users')}><Icon.shield width="18" height="18" /> Users &amp; access</button> : <span />}
+        <button type="button" className="btn lime" onClick={onExport}><Icon.download width="18" height="18" /> Downloads</button>
+        {perm.users || profile.role === 'admin' ? <button type="button" className="btn ghost" onClick={() => go('users')}><Icon.settings width="18" height="18" /> App admin</button> : <span />}
       </div>
       <div className="form-section">My settings</div>
+      {perm.canStudio && (
+        <label>View
+          <select value={studio ? '1' : ''} onChange={(e) => setMode(!!e.target.value)}>
+            <option value="">Simple – the everyday pages</option><option value="1">Studio – every detail, report and tool</option>
+          </select>
+        </label>
+      )}
       <label>Open the app on
         <select value={prefs.start} onChange={(e) => set('start', e.target.value)}>
-          <option value="home">Dashboard</option><option value="attendance">Attendance</option><option value="calls">Calls (follow-up)</option><option value="people">People</option><option value="calendar">Calendar &amp; plans</option>
+          <option value="home">Dashboard</option><option value="attendance">Attendance</option>{!perm.hqView && <option value="calls">Calls (follow-up)</option>}<option value="people">People</option><option value="calendar">Calendar</option><option value="plans">Plans &amp; budget</option>
         </select>
       </label>
       <div className="row2">

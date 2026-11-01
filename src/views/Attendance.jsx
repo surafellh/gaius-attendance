@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { etLabel, fmtGreg, sundaysOfMonth, monthOf, addMonths, monthLabel, ET_MONTHS_AM, toEthiopian, semesterOf, semesterStart, semesterEnd, semName } from '../lib/ethiopian';
 import { pct, weekSummary } from '../lib/stats';
-import { Icon, Sheet, CAT_COLOR, CalendarSheet } from './common';
+import { Icon, Sheet, CAT_COLOR, CalendarSheet, MiniDots } from './common';
+import { FollowCards } from './FollowUp';
 import { NewPersonSheet } from './Register';
 import { parseReport } from '../lib/report';
 
@@ -12,7 +13,8 @@ const GROUPS = [
 ];
 export const PROGRAM_KINDS = ['Teaching', 'Bible study', 'Devotion', 'Discussion', 'Worship night', 'Prayer', 'Training', 'Special program', 'Fellowship / get-together', 'Outreach', 'Department program', 'No meeting'];
 
-export default function Attendance({ latest, today, rosterFor, idx, saveMarks, createRoll, saveProgram, progBy, perm, openPerson, D, calInfo, reload, setError, openExport }) {
+export default function Attendance({ latest, today, rosterFor, idx, saveMarks, createRoll, saveProgram, progBy, perm, openPerson, D, calInfo, reload, setError, openExport, personBy }) {
+  const hq = perm.hqView; // HQ sees leaders, members and informal members; totals still count everyone
   const [month, setMonth] = useState(() => monthOf(latest));
   const [q, setQ] = useState('');
   const [open, setOpen] = useState({ 'Inactive Informal Member': false });
@@ -119,6 +121,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMarks, c
         </div>
       </div>
 
+      {hq && <FollowCards idx={idx} latest={latest} personBy={personBy} openPerson={openPerson} />}
       <div className="att-card">
         <div className="grid-wrap">
           <table className="att">
@@ -142,7 +145,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMarks, c
               </tr>
             </thead>
             <tbody>
-              {GROUPS.map(([k, label]) => {
+              {GROUPS.filter(([k]) => !hq || k !== 'New Comer').map(([k, label]) => {
                 const list = groups[k];
                 if (!list?.length) return null;
                 const collapsed = open[k] === false && !q;
@@ -170,7 +173,8 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMarks, c
                         <td className="namecol">
                           <button className="pname-cell" style={{ '--band-c': CAT_COLOR[k === 'New Comer' && !x.active ? 'Inactive New Comer' : k] }} onClick={() => openPerson(x.p.id)}>
                             <span className="pn"><span className="pn-t">{x.p.name}</span>{k === 'New Comer' && <span className={`nc-tag ${x.active ? 'on' : ''}`}>{x.active ? 'active' : 'inactive'}</span>}</span>
-                            {(x.p.invited_by || (k === 'New Comer' && x.p.week_joined)) && <span className="ps">{[x.p.invited_by && `via ${x.p.invited_by}`, k === 'New Comer' && x.p.week_joined && `since ${etLabel(x.p.week_joined)}`].filter(Boolean).join(' · ')}</span>}
+                            <MiniDots statuses={semHeld.filter((d) => d <= today).map((d) => statusOf(x, d) ?? idx.byPerson[x.p.id]?.[d]?.status)} />
+                            {!hq && (x.p.invited_by || (k === 'New Comer' && x.p.week_joined)) && <span className="ps">{[x.p.invited_by && `via ${x.p.invited_by}`, k === 'New Comer' && x.p.week_joined && `since ${etLabel(x.p.week_joined)}`].filter(Boolean).join(' · ')}</span>}
                           </button>
                         </td>
                         {sundays.map((s) => {
@@ -205,7 +209,7 @@ export default function Attendance({ latest, today, rosterFor, idx, saveMarks, c
               })}
               <tr className="foot">
                 <td className="sncol" />
-                <td className="namecol">Total present</td>
+                <td className="namecol">Total present{hq ? <small className="tiny muted" style={{ display: 'block', fontWeight: 600 }}>everyone, new comers included</small> : null}</td>
                 {sundays.map((s) => <td key={s}>{s <= today && (colStats[s]?.present || nPending) ? colPresent(s) : '–'}</td>)}
                 <td /><td />
               </tr>

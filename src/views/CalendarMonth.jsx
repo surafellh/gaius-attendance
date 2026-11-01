@@ -9,6 +9,7 @@ const mark = { done: '✓', not_done: '✕', cancelled: '–' };
 
 /* Month calendar: Sunday programs, events and department plans, colour-coded by department */
 export default function CalendarMonth({ D, today, perm, progBy, reload, setError }) {
+  const plain = perm.hqView; // HQ sees the planned dates, not done / not done
   const [month, setMonth] = useState(() => monthOf(today));
   const [off, setOff] = useState(() => new Set());
   const [item, setItem] = useState(null);
@@ -53,7 +54,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
         <div className="cal-strips">
           {all.some((i) => i.due_kind === 'month') && (
             <div className="cal-strip"><b>During {monthLabel(month).split(' ')[0]}</b>
-              <div className="strip-items">{all.filter((i) => i.due_kind === 'month').map((i) => <PlanChip key={i.id} i={i} D={D} today={today} onClick={() => setItem(i)} />)}</div>
+              <div className="strip-items">{all.filter((i) => i.due_kind === 'month').map((i) => <PlanChip key={i.id} i={i} D={D} today={today} plain={plain} onClick={() => setItem(i)} />)}</div>
             </div>
           )}
           {weeklyPlans.length > 0 && (
@@ -61,7 +62,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
               <div className="strip-items">{weeklyPlans.map((p) => (
                 <span key={p.id} className="weekly" style={{ '--dc': deptColor(D, p.department_id) }}>
                   <span className="am">{p.title}</span>
-                  {weekly.filter((i) => i.plan_id === p.id).map((i) => <button key={i.id} className={`idot ${itemState(i, today)}`} title={`${etLabel(i.due)} – ${STATUS[i.status][0]}`} onClick={() => setItem(i)} />)}
+                  {weekly.filter((i) => i.plan_id === p.id).map((i) => <button key={i.id} className={`idot ${plain ? 'ahead' : itemState(i, today)}`} title={plain ? etLabel(i.due) : `${etLabel(i.due)} – ${STATUS[i.status][0]}`} onClick={() => setItem(i)} />)}
                 </span>
               ))}</div>
             </div>
@@ -80,7 +81,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
               <div className="cal-num"><b>{e.day}</b><small>{fmtGreg(d)}</small></div>
               {x.prog?.kind && <span className={`cal-chip prog ${x.prog.kind === 'No meeting' ? 'none' : ''}`}>{x.prog.kind}</span>}
               {x.events.map((ev) => <span key={ev.id} className="cal-chip event am">{ev.title}</span>)}
-              {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} small onClick={(evt) => { evt.stopPropagation(); setItem(i); }} />)}
+              {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} plain={plain} small onClick={(evt) => { evt.stopPropagation(); setItem(i); }} />)}
               <span className="cal-dots">{x.items.map((i) => <i key={i.id} style={{ background: deptColor(D, i.plan.department_id) }} />)}{x.events.length > 0 && <i className="ev" />}</span>
             </div>
           );
@@ -98,7 +99,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
                 <span className="agenda-items">
                   {x.prog?.kind && <span className="cal-chip prog">{x.prog.kind}{x.prog.topic ? ` · ${x.prog.topic}` : ''}</span>}
                   {x.events.map((ev) => <span key={ev.id} className="cal-chip event am">{ev.title}</span>)}
-                  {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} onClick={() => setItem(i)} />)}
+                  {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} plain={plain} onClick={() => setItem(i)} />)}
                 </span>
               </li>
             );
@@ -107,7 +108,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
         {period.length > 0 && <p className="small muted" style={{ marginTop: 10 }}>Any time this semester: {[...new Set(period.map((i) => i.plan.title))].join(' · ')}</p>}
       </section>
 
-      {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
+      {item && !plain && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
       {day && (
         <Sheet title={etLabel(day, true)} onClose={() => setDay(null)}>
           <p className="small muted">{fmtGreg(day)} {day.slice(0, 4)}</p>
@@ -115,7 +116,7 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
             <div className="agenda-items">
               {x.prog?.kind && <span className="cal-chip prog">{x.prog.kind}{x.prog.topic ? ` · ${x.prog.topic}` : ''}{x.prog.minister ? ` – ${x.prog.minister}` : ''}</span>}
               {x.events.map((ev) => <span key={ev.id} className="cal-chip event am">{ev.title}{ev.location ? ` · ${ev.location}` : ''}</span>)}
-              {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} onClick={() => { setDay(null); setItem(i); }} />)}
+              {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} plain={plain} onClick={() => { setDay(null); setItem(i); }} />)}
               {!x.prog?.kind && !x.events.length && !x.items.length && <p className="muted">Nothing on this day.</p>}
             </div>
           ); })()}
@@ -125,12 +126,12 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
   );
 }
 
-function PlanChip({ i, D, today, onClick, small }) {
-  const st = itemState(i, today);
+function PlanChip({ i, D, today, onClick, small, plain }) {
+  const st = plain ? '' : itemState(i, today);
   return (
     <button className={`cal-chip plan ${st} ${small ? 'sm' : ''}`} style={{ '--dc': deptColor(D, i.plan.department_id) }} onClick={onClick}
-      title={`${deptName(D, i.plan.department_id)} · ${i.plan.title} · ${itemWhen(i)} · ${STATUS[i.status][0]}`}>
-      {mark[i.status] && <b>{mark[i.status]}</b>}<span className="am">{i.label || i.plan.title}</span>
+      title={`${deptName(D, i.plan.department_id)} · ${i.plan.title} · ${itemWhen(i)}${plain ? '' : ` · ${STATUS[i.status][0]}`}`}>
+      {!plain && mark[i.status] && <b>{mark[i.status]}</b>}<span className="am">{i.label || i.plan.title}</span>
     </button>
   );
 }

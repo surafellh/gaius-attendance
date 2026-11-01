@@ -4,6 +4,8 @@ import { etLabel, fmtGreg, monthOf, addMonths, monthLabel, monthRange, ET_MONTHS
   WEEKDAYS, sundaysOf, semesterOf, SEMESTERS, semesterStart, semName } from '../lib/ethiopian';
 import { parseEvents } from '../lib/report';
 import { Icon, Sheet } from './common';
+import Grid from './Grid';
+import { recordUpdate, recordInsert, recordDelete } from '../lib/undo';
 import CalendarMonth from './CalendarMonth';
 import Reconcile from './Reconcile';
 import TeachingPlan from './TeachingPlan';
@@ -34,18 +36,18 @@ export function clashes(ev, events, { progBy, meetingWd, planFor }) {
 }
 
 export default function CalendarPage(props) {
-  const [tab, setTab] = useState('month');
+  const [tab0, setTab] = useState('month');
+  const tabs = [['month', 'Month'], ['plan', 'Teaching plan'], ['evlist', 'Events'], ...(props.perm.studio ? [['events', 'HQ & our plan']] : [])];
+  const tab = tabs.some(([k]) => k === tab0) ? tab0 : 'month';
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">Calendar</h1><p className="page-sub">Sunday programs, events and every department plan, colour-coded by department.</p></div>
+        <div><h1 className="page-title">Calendar</h1><p className="page-sub">{props.perm.hqView ? 'Sunday programs, events and the planned dates of each department.' : 'Sunday programs, events and every department plan, colour-coded by department.'}</p></div>
         <div className="seg">
-          <button className={tab === 'month' ? 'on' : ''} onClick={() => setTab('month')}>Month</button>
-          <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>HQ &amp; our plan</button>
-          <button className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>Teaching plan</button>
+          {tabs.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
         </div>
       </div>
-      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <><Reconcile {...props} /><h2 className="section-h">Events</h2><Events {...props} /></> : <TeachingPlan {...props} />}
+      {tab === 'month' ? <CalendarMonth {...props} /> : tab === 'events' ? <Reconcile {...props} /> : tab === 'evlist' ? <Events {...props} /> : <TeachingPlan {...props} />}
     </div>
   );
 }
@@ -69,6 +71,28 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
   const list = mine.filter((e) => { const [a, b] = span(e); return a <= to && b >= from; }).sort((a, b) => a.starts_on.localeCompare(b.starts_on));
   const upcoming = mine.filter((e) => span(e)[1] >= today).sort((a, b) => a.starts_on.localeCompare(b.starts_on)).slice(0, 6);
   const canEdit = (e) => (e.center_id == null ? perm.switchCenter : perm.manage);
+  const editor = perm.manage || perm.switchCenter;
+  const [view, setView] = useState(editor ? 'table' : 'list');
+  async function gridSave(e, patch) {
+    if (!canEdit(e)) return;
+    const before = Object.fromEntries(Object.keys(patch).map((k) => [k, e[k] ?? null]));
+    const { error } = await supabase.from('events').update(patch).eq('id', e.id);
+    if (error) return setError(`Not saved: ${error.message}`);
+    recordUpdate('events', e.id, before, patch, `event “${e.title}”`); reload();
+  }
+  async function gridAdd(row) {
+    const { scope, ...rest } = row;
+    const { data, error } = await supabase.from('events').insert({ ...rest, kind: rest.kind || 'Event', center_id: perm.switchCenter && scope !== 'center' ? null : cid }).select().single();
+    if (error) { setError(`Not saved: ${error.message}`); return false; }
+    recordInsert('events', data, `event “${data.title}”`); reload(); return true;
+  }
+  async function gridDelete(e0) {
+    if (!canEdit(e0)) return;
+    const e = { ...e0 };
+    const { error } = await supabase.from('events').delete().eq('id', e.id);
+    if (error) return setError(`Not deleted: ${error.message}`);
+    recordDelete('events', e, `event “${e.title}”`); reload();
+  }
 
   async function save(f) {
     const row = { ...f, ends_on: f.ends_on || null, start_time: f.start_time || null, location: f.location || null, notes: f.notes || null };
@@ -92,13 +116,26 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
         </div>
         <button className="arrow" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month"><Icon.right /></button>
       </div>
-      {(perm.manage || perm.switchCenter) && (
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a list</button>
-          <button className="btn lime" onClick={() => setEdit({ title: '', kind: 'Event', starts_on: from > today ? from : today, ends_on: '', start_time: '', location: '', notes: '', center_id: cid })}><Icon.plus /> Add event</button>
-        </div>
+      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div className="seg"><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button><button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List &amp; clashes</button></div>
+        {editor && <span className="row"><button className="btn ghost" onClick={() => setPaste(true)}><Icon.book /> Paste a list</button></span>}
+      </div>
+      {view === 'table' && (
+        <section className="card flush">
+          <Grid canEdit={editor} rows={list} onSave={gridSave} onAdd={gridAdd} onDelete={gridDelete} addLabel="Add event" empty="No events this month."
+            columns={[
+              { key: 'starts_on', label: 'Starts', type: 'date', required: true, width: 150, show: canEdit },
+              { key: 'ends_on', label: 'Ends', type: 'date', width: 150, show: canEdit },
+              { key: 'title', label: 'Event', required: true, width: 220, show: canEdit },
+              { key: 'kind', label: 'Kind', type: 'select', options: EVENT_KINDS.map((k) => [k, k]), width: 130, show: canEdit },
+              { key: 'start_time', label: 'Time', width: 90, show: canEdit },
+              { key: 'location', label: 'Where', width: 150, show: canEdit },
+              ...(perm.switchCenter ? [{ key: 'scope', label: 'For', type: 'select', required: true, options: [['all', 'All centers'], ['center', D.center?.name || 'This center']], width: 130, show: () => false, render: (e) => (e.center_id == null ? 'All centers' : D.center?.name) }] : []),
+              { key: 'notes', label: 'Notes', width: 200, show: canEdit },
+            ]} />
+        </section>
       )}
-      <div className="dash-grid">
+      {view === 'list' && <div className="dash-grid">
         <section className="card">
           <div className="card-head"><div><div className="card-title">{ET_MONTHS[month.month]} {month.year}</div><div className="card-sub">Clashes with Sundays, the leaders’ meeting or other events are flagged.</div></div></div>
           {list.length === 0 && <p className="muted small">No events this month.</p>}
@@ -109,7 +146,7 @@ function Events({ D, latest, today, perm, progBy, reload, setError }) {
           {upcoming.length === 0 && <p className="muted small">Nothing scheduled yet.</p>}
           <ul className="ev-list">{upcoming.map((e) => <EventRow key={e.id} e={e} compact warn={[]} onClick={() => { setMonth(monthOf(e.starts_on)); }} />)}</ul>
         </section>
-      </div>
+      </div>}
       {edit && <EventSheet ev={edit} canEdit={!edit.id || canEdit(edit)} admin={perm.switchCenter} cid={cid} others={mine} ctx={{ progBy, meetingWd, planFor }}
         onClose={() => setEdit(null)} onSave={save} onDelete={remove} />}
       {paste && <PasteEvents year={month.year} cid={cid} admin={perm.switchCenter} others={mine} ctx={{ progBy, meetingWd, planFor }} onClose={() => setPaste(false)}

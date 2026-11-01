@@ -1,45 +1,59 @@
 // Who can do what. The database enforces the same rules (can_read / can_mark / can_manage).
+// Only the Coordinator (አገልግሎት አስተባባሪ), the Follow-up leader and the admin change data; everyone else views.
 export const ROLES = [
-  ['admin', 'Admin', 'Everything, all centers, approves users'],
-  ['founder', 'Founder / Visionary', 'Sees every center (read only)'],
-  ['director', 'Director', 'Sees every center (read only)'],
-  ['hq_followup', 'HQ Follow-up', 'Sees every center, profiles and follow-up (read only)'],
-  ['hq_staff', 'HQ staff', 'Sees every center (read only)'],
-  ['center_leader', 'Center leader', 'Runs the center: people, groups, departments, users'],
-  ['followup_leader', 'Follow-up leader', 'Manages people, groups, responsible persons'],
-  ['leader', 'Leader', 'Marks attendance, records programs, registers new comers'],
-  ['viewer', 'Viewer', 'Sees the center, cannot change anything'],
+  ['admin', 'Admin', 'Everything, every center, approves users, backup & restore'],
+  ['founder', 'Founder / Visionary', 'Sees every center (HQ view)'],
+  ['director', 'Director', 'Sees every center (HQ view)'],
+  ['hq_followup', 'HQ Follow-up', 'Sees every center (HQ view), profiles'],
+  ['hq_staff', 'HQ staff', 'Sees every center (HQ view)'],
+  ['coordinator', 'Coordinator (አገልግሎት አስተባባሪ)', 'Runs the center: edits everything, approves the center’s users'],
+  ['followup_leader', 'Follow-up leader', 'Edits attendance, people, follow-up and plans'],
+  ['center_leader', 'Center leader', 'Sees the whole center (view only)'],
+  ['leader', 'Leader', 'Sees the center (view only)'],
+  ['viewer', 'Viewer', 'Sees the center, no profiles (view only)'],
   ['former', 'Former leader', 'No access – record kept'],
   ['pending', 'Waiting for approval', 'No access yet'],
 ];
 export const roleName = (r) => ROLES.find((x) => x[0] === r)?.[1] || r;
-const HQ = ['admin', 'founder', 'director', 'hq_followup', 'hq_staff'];
-export const can = (profile) => {
+export const HQ_ROLES = ['admin', 'founder', 'director', 'hq_followup', 'hq_staff'];
+const EDIT = ['admin', 'coordinator', 'followup_leader'];
+
+/* opts.studio: the detailed mode (only for people who edit). profile.role may be replaced by "view as". */
+export const can = (profile, opts = {}) => {
   const r = profile?.role;
+  const edit = EDIT.includes(r);
   return {
-    read: r && !['pending', 'former'].includes(r),
-    mark: ['admin', 'center_leader', 'followup_leader', 'leader'].includes(r),
-    manage: ['admin', 'center_leader', 'followup_leader'].includes(r),
-    users: ['admin', 'center_leader'].includes(r),
+    role: r,
+    read: !!r && !['pending', 'former'].includes(r),
+    mark: edit,
+    manage: edit,
+    edit,
+    users: ['admin', 'coordinator'].includes(r),
     admin: r === 'admin',
-    hq: HQ.includes(r),
-    profiles: ['admin', 'founder', 'director', 'hq_followup', 'center_leader', 'followup_leader', 'leader'].includes(r),
-    finance: ['admin', 'center_leader', 'followup_leader', 'leader', 'founder', 'director', 'hq_followup', 'hq_staff'].includes(r),
-    meetingBanner: ['admin', 'center_leader', 'followup_leader', 'leader'].includes(r), // only the center's own leaders
-    switchCenter: HQ.includes(r),
+    hq: HQ_ROLES.includes(r),
+    // the HQ lens: leaders, members and informal members only; no new comer names, no plan status
+    hqView: HQ_ROLES.includes(r) && r !== 'admin',
+    profiles: ['admin', 'founder', 'director', 'hq_followup', 'coordinator', 'center_leader', 'followup_leader', 'leader'].includes(r),
+    finance: r !== 'viewer',
+    meetingBanner: ['admin', 'coordinator', 'center_leader', 'followup_leader', 'leader'].includes(r),
+    switchCenter: HQ_ROLES.includes(r),
+    studio: edit && !!opts.studio,
+    canStudio: edit,
+    backup: ['admin', 'coordinator'].includes(r),
+    restore: r === 'admin',
   };
 };
 
-/* what each role can do – shown on the Users & access page */
+/* what each role can do – shown on the App admin page */
+const ALL = ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => k);
 export const ACCESS = [
-  ['See attendance, dashboard & reports', ['admin', 'founder', 'director', 'hq_followup', 'hq_staff', 'center_leader', 'followup_leader', 'leader', 'viewer']],
-  ['See every center (switch center, Centers overview)', ['admin', 'founder', 'director', 'hq_followup', 'hq_staff']],
-  ['Profiles, phone numbers, leadership evaluations', ['admin', 'founder', 'director', 'hq_followup', 'center_leader', 'followup_leader', 'leader']],
-  ['Mark attendance, programs, plans, calls; register people', ['admin', 'center_leader', 'followup_leader', 'leader']],
-  ['Change groups, responsible persons, evaluations, events', ['admin', 'center_leader', 'followup_leader']],
-  ['Leaders’ meeting reminder on the dashboard', ['admin', 'center_leader', 'followup_leader', 'leader']],
-  ['Admin & finance (assets, money in/out)', ['admin', 'center_leader', 'followup_leader', 'leader', 'founder', 'director', 'hq_followup', 'hq_staff']],
-  ['HQ events, HQ teaching plan, roadmap lessons', ['admin', 'founder', 'director', 'hq_followup', 'hq_staff']],
-  ['Send messages as HQ', ['admin', 'founder', 'director', 'hq_followup', 'hq_staff']],
-  ['Approve users and set roles', ['admin', 'center_leader']],
+  ['See attendance, dashboard & reports', ALL],
+  ['HQ view: every center, leaders / members / informal members only', ['founder', 'director', 'hq_followup', 'hq_staff']],
+  ['Profiles and phone numbers', ['admin', 'founder', 'director', 'hq_followup', 'coordinator', 'center_leader', 'followup_leader', 'leader']],
+  ['Edit: attendance, people, programs, plans, finance, calls', EDIT],
+  ['Studio mode (full detail)', EDIT],
+  ['HQ events, HQ teaching plan, messages as HQ', HQ_ROLES],
+  ['Approve users and set roles', ['admin', 'coordinator']],
+  ['Backup', ['admin', 'coordinator']],
+  ['Restore a backup', ['admin']],
 ];

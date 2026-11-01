@@ -69,7 +69,7 @@ export default function Centers({ R, today, setCenter }) {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1 className="page-title">All centers</h1><p className="page-sub">How the ministry is doing overall, then each center. Open a center to see its own pages.</p></div>
+        <div><h1 className="page-title">All centers</h1><p className="page-sub">How the ministry is doing overall. Tap a center in the table to open its dashboard.</p></div>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <select className="small-select" value={sem} onChange={(e) => setSem(e.target.value)} aria-label="Semester">{sems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select>
           <button className="btn ghost small" onClick={() => toExcel(report())}><Icon.download width="16" height="16" /> Excel</button>
@@ -118,24 +118,6 @@ export default function Centers({ R, today, setCenter }) {
         </div>
       </section>
 
-      <div className="center-grid">
-        {rows.map((x) => (
-          <section key={x.c.id} className="card center-card" style={{ borderTop: `4px solid ${colorOf[x.c.id]}` }}>
-            <div className="card-head" style={{ marginBottom: 6 }}>
-              <div><div className="card-title">{x.c.name} <span className="am muted">{x.c.name_am}</span></div><div className="card-sub">{x.c.address || x.c.meeting_place || 'No address yet'}</div></div>
-              {x.unread > 0 && <span className="tag bad">{x.unread} new message{x.unread > 1 ? 's' : ''}</span>}
-            </div>
-            <div className="glance">
-              <div><b>{x.w ? x.w.present : '–'}</b><span>present {x.last ? `· ${etLabel(x.last)}` : ''}</span></div>
-              <div><b>{x.w ? pct(x.w.rate) : '–'}</b><span>leaders & members</span></div>
-              <div><b>{x.avg != null ? x.avg.toFixed(1) : '–'}</b><span>average · {x.held.length} Sundays</span></div>
-              <div><b>{x.leaders}</b><span>leaders</span></div><div><b>{x.members}</b><span>members</span></div><div><b>{x.ncs}</b><span>active new comers</span></div>
-              <div><b>{x.plans ? `${x.done}/${x.due}` : '–'}</b><span>plans done so far</span></div><div><b>{x.budget ? birr(x.budget) : '–'}</b><span>birr planned</span></div>
-            </div>
-            <button className="btn lime wide" style={{ marginTop: 12 }} onClick={() => setCenter(x.c.id)}>Open {x.c.name} <Icon.right width="16" height="16" /></button>
-          </section>
-        ))}
-      </div>
     </div>
   );
 }

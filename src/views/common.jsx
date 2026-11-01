@@ -42,6 +42,10 @@ export const Icon = {
   list: I(<><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /></>),
   pin: I(<><path d="M12 21s-7-6.2-7-11.5a7 7 0 0114 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>),
   clock: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
+  undo: I(<><path d="M9 7L4 12l5 5" /><path d="M4 12h10a6 6 0 010 12h-2" transform="translate(0 -6)" /></>),
+  redo: I(<><path d="M15 7l5 5-5 5" /><path d="M20 12H10a6 6 0 000 12h2" transform="translate(0 -6)" /></>),
+  mail: I(<><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M4 7l8 6 8-6" /></>),
+  upload: I(<><path d="M12 20V9M7 14l5-5 5 5" /><path d="M5 4h14" /></>),
 };
 
 /* brand mark – a simple lime daisy (Adey Abeba) */

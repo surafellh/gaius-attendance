@@ -5,6 +5,7 @@ import { parseReport } from '../lib/report';
 import { planMaps, sameTopic, parseAnyDate } from '../lib/teaching';
 import { toExcel, toPdf, readSheet, rowsUnder, col, downloadTemplate } from '../lib/exports';
 import { Icon, Sheet } from './common';
+import { record } from '../lib/undo';
 
 const srcOf = (r) => r.source || (r.center_id == null ? 'hq' : 'center');
 
@@ -45,6 +46,24 @@ export default function TeachingPlan({ D, latest, today, perm, progBy, reload, s
   const rows = useMemo(() => teachingRows(D, sem, progBy, today), [D, sem, progBy, today]);
   const planned = rows.filter((r) => (r.o || r.h) && r.s <= today);
   const asPlanned = planned.filter((r) => r.status[0] === 'As planned').length;
+  // type straight into the table: topic and teacher save when you leave the box; the ⋯ button opens the full form
+  const cellEdit = (row, source, r) => (
+    <span className="tp-cell" onClick={(e) => e.stopPropagation()}>
+      <input className="am" defaultValue={row?.topic || ''} key={`${r.s}-${source}-t-${row?.topic || ''}`} placeholder="Topic" aria-label={`${source === 'hq' ? 'HQ' : 'Center'} topic ${etLabel(r.s)}`}
+        onBlur={async (e) => { if (e.target.value.trim() === (row?.topic || '')) return; await quick(r, source, row, { topic: e.target.value.trim() }); }} />
+      <input className="am tp-teacher" defaultValue={row?.teacher || ''} key={`${r.s}-${source}-p-${row?.teacher || ''}`} placeholder="Teacher" aria-label={`${source === 'hq' ? 'HQ' : 'Center'} teacher ${etLabel(r.s)}`}
+        onBlur={async (e) => { if (e.target.value.trim() === (row?.teacher || '')) return; await quick(r, source, row, { teacher: e.target.value.trim() }); }} />
+    </span>
+  );
+  async function quick(r, source, row, patch) {
+    const center_id = source === 'hq' ? (row ? row.center_id ?? null : cid) : cid;
+    const before = row ? { series: row.series, topic: row.topic, teacher: row.teacher, notes: row.notes } : null;
+    const next = { series: row?.series, topic: row?.topic, teacher: row?.teacher, notes: row?.notes, ...patch };
+    const { error } = await saveRow(D, { sunday: r.s, source, center_id, ...next });
+    if (error) return setError(`Not saved: ${error.message}`);
+    record({ label: `teaching plan ${etLabel(r.s)}`, undo: async () => { const x = await saveRow(D, { sunday: r.s, source, center_id, ...(before || {}) }, true); if (x.error) throw x.error; }, redo: async () => { const x = await saveRow(D, { sunday: r.s, source, center_id, ...next }, true); if (x.error) throw x.error; } });
+    reload();
+  }
   const show = (r, who) => (r ? <>{r.series && <span className="tag">{r.series}</span>} <span className="am">{r.topic}</span><div className="tiny muted am">{r.teacher}{who === 'hq' && r.center_id == null ? ' · all centers' : ''}</div></> : <span className="faint">—</span>);
 
   return (
@@ -66,12 +85,12 @@ export default function TeachingPlan({ D, latest, today, perm, progBy, reload, s
             <thead><tr><th>Sunday</th><th>By HQ</th><th>By the center</th><th>What happened</th><th className="desk-only" /></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.s} className={r.s === latest ? 'sel' : ''} onClick={() => (canHq || canOwn) && setEdit(r)} style={{ cursor: canHq || canOwn ? 'pointer' : undefined }}>
+                <tr key={r.s} className={r.s === latest ? 'sel' : ''}>
                   <td style={{ whiteSpace: 'nowrap' }}><b>{etLabel(r.s)}</b><div className="tiny muted">{fmtGreg(r.s)}</div>{r.status[0] && <div className="mob-only"><span className={`tag ${r.status[1]}`}>{r.status[0]}</span></div>}</td>
-                  <td className="tp-hq">{show(r.h, 'hq')}</td>
-                  <td>{show(r.o)}{r.differs && <div><span className="tag sun">differs from HQ</span></div>}</td>
+                  <td className="tp-hq">{canHq ? cellEdit(r.h, 'hq', r) : show(r.h, 'hq')}{canHq && r.h?.center_id == null && r.h && <div className="tiny muted">all centers</div>}</td>
+                  <td>{canOwn ? cellEdit(r.o, 'center', r) : show(r.o)}{r.differs && <div><span className="tag sun">differs from HQ</span></div>}</td>
                   <td className="am">{r.act?.kind ? <>{r.act.kind === 'Teaching' ? '' : <span className="tag">{r.act.kind}</span>} {r.act.topic}<div className="tiny muted">{r.act.minister}</div></> : <span className="faint">—</span>}</td>
-                  <td className="desk-only">{r.status[0] && <span className={`tag ${r.status[1]}`}>{r.status[0]}</span>}</td>
+                  <td className="desk-only">{r.status[0] && <span className={`tag ${r.status[1]}`}>{r.status[0]}</span>}{(canHq || canOwn) && <button className="link small" style={{ marginLeft: 6 }} onClick={() => setEdit(r)} aria-label={`More for ${etLabel(r.s)}`}>⋯</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -86,9 +105,10 @@ export default function TeachingPlan({ D, latest, today, perm, progBy, reload, s
 }
 
 /* write one Sunday's row for HQ (this center or all centers) or for the center */
-async function saveRow(D, { sunday, source, center_id, series, topic, teacher, notes }) {
+async function saveRow(D, { sunday, source, center_id, series, topic, teacher, notes }, fresh) {
   const row = { sunday, source, center_id, series: series || null, topic: topic || null, teacher: teacher || null, notes: notes || null };
-  const ex = D.plan.find((p) => p.sunday === sunday && srcOf(p) === source && (p.center_id ?? null) === (center_id ?? null));
+  let ex = D.plan.find((p) => p.sunday === sunday && srcOf(p) === source && (p.center_id ?? null) === (center_id ?? null));
+  if (fresh) { let q = supabase.from('teaching_plan').select('id').eq('sunday', sunday).eq('source', source); q = center_id == null ? q.is('center_id', null) : q.eq('center_id', center_id); const { data } = await q; ex = data?.[0]; }
   if (!topic && !series && !teacher && !notes) return ex ? supabase.from('teaching_plan').delete().eq('id', ex.id) : { error: null };
   return ex ? supabase.from('teaching_plan').update(row).eq('id', ex.id) : supabase.from('teaching_plan').insert(row);
 }
