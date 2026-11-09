@@ -169,11 +169,11 @@ function Main({ profile: realProfile }) {
     const rows = idx.bySunday[s];
     if (rows?.length) {
       const have = new Set(rows.map((r) => r.person_id));
-      // people with no line yet on this Sunday: ones who first came that day, and anyone registered after the list
-      // was started (e.g. "before the records" or an earlier first Sunday) – from the week they were registered
-      const regWeek = (p) => (p.created_at ? new Date(Date.parse(p.created_at) - 7 * 864e5).toISOString().slice(0, 10) : null);
+      // people with no line yet on this Sunday: ones who first came that day, and anyone registered after the list was
+      // started – "before the records" or an earlier first Sunday – on every Sunday of the semester they were registered in, and after
+      const from = (p) => (p.created_at ? semesterStart(semesterOf(p.created_at.slice(0, 10))) : null);
       const extra = D.people.filter((p) => !have.has(p.id) && !p.archived && p.category && (p.week_joined === s
-        || ((!p.week_joined || p.week_joined <= s) && (!regWeek(p) || s >= regWeek(p)) && !Object.keys(idx.byPerson[p.id] || {}).some((d) => d >= s))));
+        || ((!p.week_joined || p.week_joined <= s) && (!from(p) || s >= from(p)))));
       return [
         ...rows.filter((r) => personBy[r.person_id]).map((r) => ({ p: personBy[r.person_id], r })),
         ...extra.map((p) => ({ p, r: { person_id: p.id, sunday: s, category: p.category, active: true, status: null, virtual: true } })),
