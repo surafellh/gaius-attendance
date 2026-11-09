@@ -132,9 +132,11 @@ export async function registerPerson({ D, draft, createRoll, setError, category:
   }).select().single();
   if (error) { setError(`Not saved: ${error.message}`); return false; }
   await supabase.from('category_history').insert({ person_id: data.id, category, since: joined || todayIso(), note: 'Registered' });
-  if (joined && joined <= todayIso() && draft.present !== false) {
-    if (createRoll) await createRoll(joined);
-    await supabase.from('attendance').upsert({ person_id: data.id, sunday: joined, status: 'Present', category, active: true }, { onConflict: 'person_id,sunday' });
+  // present on their first Sunday – or, for someone from before the records, on the Sunday being marked
+  const on = joined || draft.present_on || null;
+  if (on && on <= todayIso() && draft.present !== false) {
+    if (createRoll) await createRoll(on);
+    await supabase.from('attendance').upsert({ person_id: data.id, sunday: on, status: 'Present', category, active: true }, { onConflict: 'person_id,sunday' });
   }
   return true;
 }
@@ -152,7 +154,7 @@ export function NewPersonSheet({ D, defaultSunday, createRoll, setError, onClose
       <form className="form" onSubmit={async (e) => {
         e.preventDefault(); if (!f.name.trim()) return;
         setBusy(true);
-        const ok = await registerPerson({ D, draft: f, createRoll, setError });
+        const ok = await registerPerson({ D, draft: { ...f, present_on: defaultSunday }, createRoll, setError });
         setBusy(false); if (ok) onDone();
       }}>
         <div className="row2">
@@ -173,7 +175,7 @@ export function NewPersonSheet({ D, defaultSunday, createRoll, setError, onClose
             </select>
           </label>
         </div>
-        {f.week_joined && <label className="check"><input type="checkbox" checked={f.present} onChange={(e) => setF({ ...f, present: e.target.checked })} /> Mark them present on {etLabel(f.week_joined)}</label>}
+        {(f.week_joined || defaultSunday) && <label className="check"><input type="checkbox" checked={f.present} onChange={(e) => setF({ ...f, present: e.target.checked })} /> Mark them present on {etLabel(f.week_joined || defaultSunday)}{!f.week_joined && ' (the Sunday being marked)'}</label>}
         <p className="muted small" style={{ margin: 0 }}>New comers start active. Full profile details can be filled in on the People page.</p>
         <button className="btn lime wide" disabled={busy}>{busy ? 'Registering…' : 'Register'}</button>
       </form>
