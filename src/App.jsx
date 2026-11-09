@@ -56,7 +56,7 @@ export default function App() {
           <p className="muted">
             {profile?.role === 'former'
               ? 'Thank you for serving. Your account no longer has access; your records are kept.'
-              : `Your account (${session.user.email}) is ready. The center leader or admin needs to approve it before you can see attendance.`}
+              : `Your account (${session.user.email}) is ready. Your center’s coordinator (or the admin) needs to approve it before you can see anything.`}
           </p>
           <button className="btn ghost wide" style={{ marginTop: 18 }} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
