@@ -63,7 +63,7 @@ function Activities({ R, today, perm, reload, setError }) {
           columns={[
             { key: 'title', label: 'Plan / activity', required: true, width: 230 },
             { key: 'kind', label: 'Kind', type: 'select', options: ACT_KINDS.map((k) => [k, k]), width: 130 },
-            { key: 'center_id', label: 'For', type: 'select', options: R.centers.map((c) => [c.id, c.name]), width: 120 },
+            { key: 'center_id', label: 'For', type: 'select', options: R.centers.map((c) => [c.id, c.name]), width: 130, empty: 'All centers' },
             { key: 'owner', label: 'Responsible', width: 140 },
             { key: 'starts_on', label: 'Starts', type: 'date', width: 150 },
             { key: 'due', label: 'Due', type: 'date', width: 150 },
@@ -72,7 +72,7 @@ function Activities({ R, today, perm, reload, setError }) {
             { key: 'notes', label: 'Notes', width: 200 },
           ]} />
         <p className="tiny muted pad">“For” left empty = HQ / every center. Centers see the plans meant for them.{perm.hqEdit ? ' ' : ''}{perm.hqEdit && <button className="link small" onClick={() => setUpload(true)}>Upload a whole semester plan from Excel (English or Amharic)</button>}</p>
-        {upload && <HqUploadSheet R={R} sem={semesterOf(today)} kinds={ACT_KINDS} onClose={() => setUpload(false)} reload={reload} setError={setError} />}
+        {upload && <HqUploadSheet R={R} sem={semesterOf(today)} kinds={ACT_KINDS} onClose={() => setUpload(false)} reload={reload} setError={setError} tlang={R.L ? R.L('templates') : 'both'} />}
       </section>
     </>
   );

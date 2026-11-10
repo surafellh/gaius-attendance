@@ -166,3 +166,12 @@ create policy ledger_write on ledger for all to authenticated using (public.can_
 
 -- semester plans: who is responsible for each plan (filled from the upload template)
 alter table plans add column if not exists responsible text;
+
+-- the landing page in Amharic (shown when someone picks አማ); edit on App admin → Backup & landing page
+insert into site_info (key, value) values
+  ('tagline_am', 'የኢየሱስ ክርስቶስን እውነተኛ መልክ በወጣቶቻችን ሕይወት ለመግለጥ።'),
+  ('vision_am', 'ወጣቶች ሰልጥነውና ታጥቀው የደቀ መዝሙርነት ሕይወት ሲኖሩ ማየት።'),
+  ('verse_am', 'ወዳጅ ሆይ፥ ነፍስህ እንደሚከናወንልህ በሁሉ እንዲከናወንልህና ጤና እንዲኖርህ እጸልያለሁ።'),
+  ('verse_ref_am', '3ኛ ዮሐንስ 2'),
+  ('about_am', 'ጋይዮስ አገልግሎት በወጣቶች ሁለንተናዊ እድገትና ለውጥ ላይ የሚያተኩር መጽሐፍ ቅዱሳዊ የክርስቲያን መንፈሳዊ ተቋም ነው። በየካቲት 2018 እ.ኤ.አ. የተመሠረተ ሲሆን ከ2014 እ.ኤ.አ. ጀምሮ ከወንጌላውያን አብያተ ክርስቲያናት፣ ከኢቫሱና ከስክሪፕቸር ዩኒየን ጋር በመሆን በወጣቶች ጉዳይ ሠርቷል – የወጣቶች ኮንፈረንሶች፣ የሱስ ግንዛቤ እና በማዕከላቱ ሳምንታዊ የእሑድ የወጣቶች ፕሮግራሞች።')
+on conflict (key) do nothing;

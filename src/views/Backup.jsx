@@ -57,7 +57,8 @@ export default function Backup({ D, R, perm, realProfile, reload, setError }) {
   }
 
   const site = { ...SITE_DEFAULTS, ...(R.site || {}) };
-  const siteRows = [['logo', 'Logo (image link)'], ['tagline', 'Tagline'], ['vision', 'Vision'], ['verse', 'Key verse'], ['verse_ref', 'Verse reference'], ['about', 'About Gaius'], ['website', 'Website'], ['telegram', 'Telegram']]
+  const siteRows = [['logo', 'Logo (image link)'], ['tagline', 'Tagline'], ['tagline_am', 'Tagline · አማርኛ'], ['vision', 'Vision'], ['vision_am', 'Vision · አማርኛ'], ['verse', 'Key verse'], ['verse_am', 'Key verse · አማርኛ'],
+    ['verse_ref', 'Verse reference'], ['verse_ref_am', 'Verse reference · አማርኛ'], ['about', 'About Gaius'], ['about_am', 'About Gaius · አማርኛ'], ['website', 'Website'], ['telegram', 'Telegram']]
     .map(([key, label]) => ({ id: key, key, label, value: site[key] || '' }));
   async function saveSite(r, patch) {
     const { error } = await supabase.from('site_info').upsert({ key: r.key, value: patch.value, updated_at: new Date().toISOString() }, { onConflict: 'key' });

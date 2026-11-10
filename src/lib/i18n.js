@@ -3,31 +3,40 @@
 // using the dictionary in am.js. People's names, plan titles and other data are left as they are.
 import { AM, AM_WORDS } from './am';
 
-const WORD = Object.fromEntries(AM_WORDS);
+const WORD = Object.assign(Object.create(null), Object.fromEntries(AM_WORDS));
 const WORD_RE = new RegExp(`\\b(${AM_WORDS.map(([w]) => w).sort((a, b) => b.length - a.length).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g');
 
 /* translations added on Settings → Language (they win over the built-in ones) */
 const EXTRA = {};
 export function setTranslations(d) { for (const k of Object.keys(EXTRA)) delete EXTRA[k]; Object.assign(EXTRA, d || {}); }
-const word = (t) => EXTRA[t] || AM[t];
+const word = (t) => (Object.hasOwn(EXTRA, t) ? EXTRA[t] : Object.hasOwn(AM, t) ? AM[t] : undefined);
 /* English text seen on Amharic pages without a translation, for Settings → Language */
 const MISSING = new Map();
+const DYN = new Set();
+if (typeof window !== 'undefined') window.__gaiusDyn = () => [...DYN];
 export const missingTexts = () => [...MISSING.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+if (typeof window !== 'undefined') window.__gaiusMissing = missingTexts;
 
 /* one piece of text in a language */
 export function tr(s, lang) {
   if (lang !== 'am' || s == null || s === '') return s;
   const str = String(s);
   const t = str.trim();
-  if (word(t)) return str.replace(t, word(t));
+  if (word(t) !== undefined) return str.replace(t, word(t));
   if (/\d/.test(t) && /[A-Za-z]/.test(t)) return str.replace(WORD_RE, (m) => WORD[m] || m); // dates and numbers: "Tikimt 08", "1,500 birr"
+  // the app's words put together ("Tikimt (during the month) · Hidar (during the month)", "Leaders, Members"): only if nothing English is left
+  {
+    const parts = str.split(/(\s*[·,]\s*)/).map((x) => (/^\s*[·,]\s*$/.test(x) ? x : word(x.trim()) !== undefined ? x.replace(x.trim(), word(x.trim())) : x.replace(WORD_RE, (m) => WORD[m] || m)));
+    const out = parts.join('');
+    if (out !== str && !/[A-Za-z]{2}/.test(out)) return out;
+  }
   return str;
 }
 /* a whole download (title, sheet names, headings, and the app's own words in the cells) */
 export function trReport(rep, lang) {
   if (lang !== 'am') return rep;
   return { ...rep, title: tr(rep.title, lang), sub: tr(rep.sub, lang),
-    sheets: rep.sheets.map((sh) => ({ ...sh, name: tr(sh.name, lang), head: sh.head?.map((h) => tr(h, lang)), body: sh.body?.map((r) => (Array.isArray(r) ? r.map((v) => (typeof v === 'string' && word(v.trim()) ? tr(v, lang) : v)) : r)) })) };
+    sheets: rep.sheets.map((sh) => ({ ...sh, name: tr(sh.name, lang), head: sh.head?.map((h) => tr(h, lang)), body: sh.body?.map((r) => (Array.isArray(r) ? r.map((v) => (typeof v === 'string' && word(v.trim()) !== undefined ? tr(v, lang) : v)) : r)) })) };
 }
 
 /* ── the translator: watches the page and swaps text in Amharic areas ─────────────────────────── */
@@ -45,7 +54,8 @@ function doText(n) {
     if (out !== cur) { orig.set(n, { en: cur, am: out }); n.nodeValue = out; } else {
       orig.delete(n);
       const t = cur.trim();
-      if (/[A-Za-z]{3}/.test(t) && !/\d/.test(t) && t.length < 140 && MISSING.size < 800) MISSING.set(t, (MISSING.get(t) || 0) + 1);
+      if (/[A-Za-z]{3}/.test(t) && !/\d/.test(t) && t.length < 200 && MISSING.size < 3000) MISSING.set(t, (MISSING.get(t) || 0) + 1);
+      else if (/[A-Za-z]{3}/.test(t) && t.length < 200 && DYN.size < 3000) DYN.add(t);
     }
   } else if (o && o.am === cur) { n.nodeValue = o.en; orig.delete(n); }
 }

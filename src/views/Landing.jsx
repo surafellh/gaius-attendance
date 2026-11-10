@@ -13,10 +13,15 @@ export const SITE_DEFAULTS = {
   logo: 'https://gaiusministry.org/wp-content/uploads/2023/02/cropped-gaius_logo-270x270.png',
   website: 'https://gaiusministry.org',
   telegram: 'https://t.me/Gaiusministry',
+  tagline_am: 'የኢየሱስ ክርስቶስን እውነተኛ መልክ በወጣቶቻችን ሕይወት ለመግለጥ።',
+  vision_am: 'ወጣቶች ሰልጥነውና ታጥቀው የደቀ መዝሙርነት ሕይወት ሲኖሩ ማየት።',
+  verse_am: 'ወዳጅ ሆይ፥ ነፍስህ እንደሚከናወንልህ በሁሉ እንዲከናወንልህና ጤና እንዲኖርህ እጸልያለሁ።',
+  verse_ref_am: '3ኛ ዮሐንስ 2',
+  about_am: 'ጋይዮስ አገልግሎት በወጣቶች ሁለንተናዊ እድገትና ለውጥ ላይ የሚያተኩር መጽሐፍ ቅዱሳዊ የክርስቲያን መንፈሳዊ ተቋም ነው። በየካቲት 2018 እ.ኤ.አ. የተመሠረተ ሲሆን ከ2014 እ.ኤ.አ. ጀምሮ ከወንጌላውያን አብያተ ክርስቲያናት፣ ከኢቫሱና ከስክሪፕቸር ዩኒየን ጋር በመሆን በወጣቶች ጉዳይ ሠርቷል – የወጣቶች ኮንፈረንሶች፣ የሱስ ግንዛቤ እና በማዕከላቱ ሳምንታዊ የእሑድ የወጣቶች ፕሮግራሞች።',
 };
 
 /* The page anyone with the link sees first. Signing in takes each person straight to their own center (HQ to the overview). */
-export default function Landing() {
+export default function Landing({ lang = 'en', setLang }) {
   const [site, setSite] = useState(SITE_DEFAULTS);
   const [centers, setCenters] = useState([]);
   const [auth, setAuth] = useState(null); // 'in' | 'up'
@@ -25,6 +30,8 @@ export default function Landing() {
     supabase.from('site_info').select('key,value').then(({ data }) => { if (data?.length) setSite((s) => ({ ...s, ...Object.fromEntries(data.filter((r) => r.value).map((r) => [r.key, r.value])) })); });
     supabase.rpc('public_centers').then(({ data }) => setCenters(data || []));
   }, []);
+  // the Amharic text of the landing page when it has been written (Backup & landing page), else the English
+  const am = (k) => (lang === 'am' && site[`${k}_am`]) || site[k];
   const logo = (size) => (site.logo && !badLogo ? <img className="logo-img" src={site.logo} alt="Gaius Ministry logo" width={size} height={size} onError={() => setBadLogo(true)} /> : <Mark size={size} />);
 
   return (
@@ -33,6 +40,7 @@ export default function Landing() {
         <div className="land-top-inner">
           <div className="brand">{logo(38)}<div><div className="brand-name">Gaius Ministry</div><div className="brand-sub">for our youth</div></div></div>
           <div className="row" style={{ gap: 8 }}>
+            {setLang && <div className="seg land-lang" data-notr><button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button><button className={lang === 'am' ? 'on' : ''} onClick={() => setLang('am')}>አማ</button></div>}
             <button className="btn ghost small land-btn" onClick={() => setAuth('in')}>Sign in</button>
             <button className="btn small land-btn dark" onClick={() => setAuth('up')}>Sign up</button>
           </div>
@@ -43,7 +51,7 @@ export default function Landing() {
         <div className="land-hero-inner">
           <div className="land-logo">{logo(120)}</div>
           <h1>Gaius Ministry</h1>
-          <p className="land-tag">{site.tagline}</p>
+          <p className="land-tag">{am('tagline')}</p>
           <div className="row" style={{ gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn dark" onClick={() => setAuth('in')}>Sign in to your center</button>
             <button className="btn ghost land-light" onClick={() => setAuth('up')}>New leader? Sign up</button>
@@ -55,12 +63,12 @@ export default function Landing() {
       <main className="land-main">
         <section className="land-verse">
           <span className="land-kicker">Key verse</span>
-          <blockquote>“{site.verse}”</blockquote>
-          <cite>{site.verse_ref}</cite>
+          <blockquote>“{am('verse')}”</blockquote>
+          <cite>{am('verse_ref')}</cite>
         </section>
         <div className="land-two">
-          <section className="land-card"><span className="land-kicker">Our vision</span><p className="land-big">{site.vision}</p></section>
-          <section className="land-card"><span className="land-kicker">About Gaius</span><p>{site.about}</p></section>
+          <section className="land-card"><span className="land-kicker">Our vision</span><p className="land-big">{am('vision')}</p></section>
+          <section className="land-card"><span className="land-kicker">About Gaius</span><p>{am('about')}</p></section>
         </div>
         {centers.length > 0 && (
           <section className="land-card">

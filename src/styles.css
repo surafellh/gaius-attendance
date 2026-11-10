@@ -1139,3 +1139,6 @@ p.pad { padding-bottom: 12px; }
 .res { font-size: .68rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: var(--line-2); }
 .res.ontime { background: var(--lime-soft); color: #1c6b39; } .res.late { background: #e6f3d3; color: #4d7a17; }
 .res.notdone, .res.overdue { background: var(--absent-soft); color: #7a2418; } .res.postponed { background: var(--warn-soft); color: #6b4705; }
+.land-lang button { padding: 4px 10px; font-size: .78rem; }
+.cal-strip .hq-chip { max-width: 100% !important; }
+.strip-items { min-width: 0; }

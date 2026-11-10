@@ -36,6 +36,10 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState(undefined);
   const [recovery, setRecovery] = useState(false);
+  // before signing in: the language this device chose last (English unless set to Amharic)
+  const [preLang, setPreLangState] = useState(() => (loadMyLang().mode === 'am' ? 'am' : 'en'));
+  const setPreLang = (l) => { setPreLangState(l); const m = loadMyLang(); saveMyLang({ ...m, mode: l === 'am' ? 'am' : m.mode === 'am' ? 'ministry' : m.mode }); };
+  useEffect(() => { startTranslator(); }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); });
@@ -48,19 +52,19 @@ export default function App() {
       .then(({ data }) => setProfile(data || null));
   }, [session]);
 
-  if (!ready) return <div className="center muted">Loading…</div>;
-  if (recovery) return <Auth recovery onRecovered={() => setTimeout(() => setRecovery(false), 1200)} />;
-  if (!session) return <Landing />;
-  if (profile === undefined) return <div className="center muted">Loading…</div>;
+  if (!ready) return <div className="center muted" data-lang={preLang}>Loading…</div>;
+  if (recovery) return <div data-lang={preLang}><Auth recovery onRecovered={() => setTimeout(() => setRecovery(false), 1200)} /></div>;
+  if (!session) return <div data-lang={preLang}><Landing lang={preLang} setLang={setPreLang} /></div>;
+  if (profile === undefined) return <div className="center muted" data-lang={preLang}>Loading…</div>;
   if (!profile || !can(profile).read) {
     return (
-      <div className="auth-wrap">
+      <div className="auth-wrap" data-lang={preLang}>
         <div className="auth-card">
           <div className="brand"><Mark /><div><div className="brand-name">{profile?.role === 'former' ? 'Access closed' : 'Waiting for approval'}</div></div></div>
           <p className="muted">
             {profile?.role === 'former'
               ? 'Thank you for serving. Your account no longer has access; your records are kept.'
-              : `Your account (${session.user.email}) is ready. Your center’s coordinator (or the admin) needs to approve it before you can see anything.`}
+              : <>Your account is ready. Your center’s coordinator (or the admin) needs to approve it before you can see anything. <b data-notr>{session.user.email}</b></>}
           </p>
           <button className="btn ghost wide" style={{ marginTop: 18 }} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>

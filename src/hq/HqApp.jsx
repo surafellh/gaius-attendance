@@ -48,7 +48,7 @@ export default function HqApp({ L = () => 'en', myLang, setMyLang, R, today, pro
   const unread = unreadOf(null);
   const initials = (realProfile.full_name || realProfile.email || '?').trim()[0].toUpperCase();
   const px = person && C.find((x) => x.c.id === person.cid);
-  const common = { R: RF, C, today, perm: hqPerm, reload, setError, period, setPeriod, openCenter, openPerson, go };
+  const common = { R: { ...RF, L },  C, today, perm: hqPerm, reload, setError, period, setPeriod, openCenter, openPerson, go };
 
   return (
     <div className="app hq" data-lang={L('menu')}>

@@ -21,14 +21,14 @@ export default function Grid({ columns, rows, onSave, onAdd, onDelete, canEdit, 
   const cell = (c, r, isNew) => {
     const ro = !canEdit || c.ro || (!isNew && c.show && !c.show(r));
     if (c.render && (ro || c.ro)) return c.render(r);
-    if (ro) return <span className="cell-ro">{c.type === 'date' && r[c.key] ? etLabel(r[c.key], true) : c.type === 'select' ? (c.options.find((o) => String(o[0]) === String(r[c.key]))?.[1] ?? '') : c.type === 'check' ? (r[c.key] ? '✓' : '') : String(value(c, r))}</span>;
+    if (ro) return <span className="cell-ro">{c.type === 'date' && r[c.key] ? etLabel(r[c.key], true) : c.type === 'select' ? (c.options.find((o) => String(o[0]) === String(r[c.key]))?.[1] ?? (c.empty || '')) : c.type === 'check' ? (r[c.key] ? '✓' : '') : String(value(c, r))}</span>;
     const common = {
       'aria-label': c.label, onKeyDown: move,
       ...(isNew ? { value: draft[c.key] ?? '', onChange: (e) => setDraft({ ...draft, [c.key]: c.type === 'check' ? e.target.checked : e.target.value }) }
         : { defaultValue: value(c, r), key: `${rowKey(r)}-${c.key}-${String(r[c.key])}`, onBlur: (e) => { const v = c.type === 'check' ? e.target.checked : e.target.value; if (String(v) !== String(value(c, r))) onSave(r, { [c.key]: out(c, v) }); } }),
     };
     const { key: ck, ...rest } = common;
-    if (c.type === 'select') return <select key={ck} {...rest}>{!c.required && <option value="">–</option>}{c.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
+    if (c.type === 'select') return <select key={ck} {...rest}>{!c.required && <option value="">{c.empty || '–'}</option>}{c.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
     if (c.type === 'check') return isNew ? <input type="checkbox" checked={!!draft[c.key]} aria-label={c.label} onChange={common.onChange} />
       : <input type="checkbox" defaultChecked={!!r[c.key]} aria-label={c.label} key={ck} onChange={(e) => onSave(r, { [c.key]: e.target.checked })} />;
     return (
