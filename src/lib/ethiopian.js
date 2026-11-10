@@ -73,7 +73,15 @@ export function fmtGreg(d) {
   return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-export const SEMESTERS = semesterList('Meskerem 2018', 12);
+// every semester from 2010 E.C. to three years ahead (not only the years that have data)
+const ET_NOW = toEthiopian(new Date().toISOString().slice(0, 10)).year;
+export const SEMESTERS = semesterList('Meskerem 2010', (ET_NOW - 2010 + 4) * 2);
+/* years for a year picker: the years with data, plus a few around this year, with no gaps */
+export function yearOptions(dataYears = [], back = 5, ahead = 2) {
+  const ys = [...dataYears.map(Number).filter(Boolean), ET_NOW - back, ET_NOW + ahead];
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  return Array.from({ length: hi - lo + 1 }, (_, i) => hi - i);
+}
 
 export const ET_MONTHS_AM = ['መስከረም','ጥቅምት','ኅዳር','ታኅሣሥ','ጥር','የካቲት','መጋቢት','ሚያዝያ','ግንቦት','ሰኔ','ሐምሌ','ነሐሴ','ጳጉሜ'];
 

@@ -80,6 +80,9 @@ export const DOWNLOADS = [
   ['changes', 'Group & responsible changes'], ['roadmap', 'Teaching roadmap'], ['events', 'Events'], ['meetings', 'Leaders’ meetings'], ['finance', 'Money & assets'], ['everything', 'Everything'],
 ];
 
+export const DEFAULT_IN_CATS = ['From HQ', 'Contribution / offering', 'Fund-raising', 'Donation', 'Other'];
+export const DEFAULT_OUT_CATS = ['Program', 'Department plan', 'Purchase', 'Transport', 'Tea & coffee', 'Rent / utilities', 'Other'];
+
 /* settings as stored + defaults → what the app uses */
 export function buildConfig(capRows, settings = {}) {
   const caps = {};
@@ -100,6 +103,27 @@ export function buildConfig(capRows, settings = {}) {
     people: pick(PEOPLE_COLS, settings.people_columns, ['simple', 'studio']),
     downloads: Object.fromEntries(DOWNLOADS.map(([k]) => [k, { on: true, hide: [], roles: null, ...(settings.downloads?.[k] || {}) }])),
     roleNames: settings.role_names || {},
+    calendar: { overlap: 2, ...(settings.calendar || {}) },
+    finance: { inCats: DEFAULT_IN_CATS, outCats: DEFAULT_OUT_CATS, ...(settings.finance || {}) },
+    lists: { pageSize: 40, top: 10, ...(settings.lists || {}) },
   };
 }
 export const DEFAULT_CONFIG = buildConfig(null);
+
+/* parts of the app a center can have; turned off per center on Settings → Centers */
+export const FEATURES = [
+  ['calls', 'Follow-up calls'], ['leadership', 'Leadership evaluations'], ['roadmap', 'Teaching roadmap'], ['calendar', 'Calendar & events'],
+  ['plans', 'Plans & budget'], ['meeting', 'Leaders’ meetings'], ['departments', 'Departments'], ['finance', 'Admin & finance'], ['messages', 'Messages with HQ'],
+];
+export const featureOn = (center, key) => !center?.features || center.features[key] !== false;
+export const CURRENCIES = [['ETB', 'Birr (ETB)'], ['USD', 'US dollar (USD)'], ['EUR', 'Euro (EUR)'], ['GBP', 'Pound (GBP)'], ['KES', 'Kenyan shilling (KES)'], ['AED', 'Dirham (AED)'], ['SAR', 'Riyal (SAR)'], ['CAD', 'Canadian dollar (CAD)']];
+const SYMBOL = { ETB: 'birr', USD: '$', EUR: '€', GBP: '£', KES: 'KSh', AED: 'AED', SAR: 'SAR', CAD: 'CA$' };
+/* an amount in a center's currency, e.g. "1,500 birr" or "$1,500" */
+export function money(n, cur = 'ETB', zero = '–') {
+  if (!n && n !== 0) return zero;
+  if (!Number(n)) return zero;
+  const v = Number(n).toLocaleString('en-US', { maximumFractionDigits: cur === 'ETB' ? 0 : 2 });
+  const s = SYMBOL[cur] || cur;
+  return cur === 'ETB' || s.length > 2 ? `${v} ${s}` : `${s}${v}`;
+}
+export const curOf = (center) => center?.currency || 'ETB';

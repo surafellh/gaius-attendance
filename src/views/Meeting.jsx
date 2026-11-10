@@ -5,7 +5,7 @@ import { etLabel, fmtGreg, nextWeekday, daysBetween, addDays, WEEKDAYS, WEEKDAYS
 import { personFacts, counts } from '../lib/stats';
 import { Icon, Sheet } from './common';
 import { requestFor } from './Plans';
-import { monthName } from '../lib/plans';
+import { monthName, birr } from '../lib/plans';
 
 export const meetingInfo = (center, today) => {
   const wd = center?.meeting_weekday ?? 3;
@@ -50,7 +50,7 @@ export default function Meeting({ D, idx, latest, today, perm, personBy, progBy,
       const nk = `${e.month === 12 ? e.year + 1 : e.year}-${String((e.month + 1) % 13).padStart(2, '0')}`;
       const { needs } = requestFor(D, nk);
       const total = needs.reduce((n, i) => n + Number(i.budget), 0);
-      if (needs.length) out.push({ title: `Budget request for ${monthName(nk)}: ${needs.length} plans, ${total.toLocaleString()} birr – give to Admin & Finance`, details: 'Plans & budget → Month-end request' });
+      if (needs.length) out.push({ title: `Budget request for ${monthName(nk)}: ${needs.length} plans, ${birr(total)} – give to Admin & Finance`, details: 'Plans & budget → Month-end request' });
       const [mf, mt] = monthRange({ year: e.year, month: e.month });
       const mine = D.items.filter((i) => i.due >= mf && i.due <= mt);
       if (mine.length) out.push({ title: `Review ${ET_MONTHS[e.month]} plans: ${mine.filter((i) => i.status === 'done').length} done, ${mine.filter((i) => i.status === 'not_done').length} not done, ${mine.filter((i) => i.status === 'planned').length} not marked`, details: 'Including the plans that need no budget' });

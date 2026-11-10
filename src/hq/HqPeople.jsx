@@ -15,6 +15,8 @@ export default function HqPeople({ R, C, openPerson, perm }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('center');
   const [view, setView] = useState('list');   // list | roadmap | counts
+  const page = R.config?.lists?.pageSize || 40;
+  const [limit, setLimit] = useState(page);
   const all = useMemo(() => C.flatMap((x) => {
     const lessons = x.D.lessons.filter((l) => l.active && (l.center_id == null || l.center_id === x.c.id));
     const li = lessonIndex(x.D, lessons, x.idx, x.c.id);
@@ -71,7 +73,7 @@ export default function HqPeople({ R, C, openPerson, perm }) {
               <table className="gtable left hq-table">
                 <thead><tr><th>Name</th><th>Center</th><th>Group</th><th>This semester</th><th className="desk-only">Sundays</th><th>Last came</th><th>Roadmap</th>{perm.profiles && <th className="desk-only">Phone</th>}</tr></thead>
                 <tbody>
-                  {shown.map((y) => (
+                  {shown.slice(0, limit).map((y) => (
                     <tr key={`${y.c.id}-${y.p.id}`} className="click" onClick={() => openPerson(y.c.id, y.p.id)}>
                       <td><span className="row" style={{ gap: 8 }}><Initials name={y.p.name} category={y.p.category} size={28} /><span><b>{y.p.name}</b>{stageOf(y.p) && <small className="muted" style={{ display: 'block' }}>{STAGE_LABEL[stageOf(y.p)]}</small>}</span></span></td>
                       <td><CenterTag R={R} c={y.c} /></td>
@@ -87,6 +89,7 @@ export default function HqPeople({ R, C, openPerson, perm }) {
                 </tbody>
               </table>
             </div>
+            {shown.length > limit && <div className="pad" style={{ padding: 12 }}><button className="btn ghost small" onClick={() => setLimit(limit + page)}>Show more ({shown.length - limit} left)</button> <span className="tiny muted">or narrow it with the centers, groups or search above</span></div>}
           </section>
         ) : (
           <section className="card flush">
@@ -96,7 +99,7 @@ export default function HqPeople({ R, C, openPerson, perm }) {
                 <table className="gtable hq-table roadmap-m">
                   <thead><tr><th className="stick left">Name</th><th>Center</th>{hqLessons.map((l) => <th key={l.id} title={l.name_am || l.name}>{l.name}</th>)}<th>Done</th></tr></thead>
                   <tbody>
-                    {shown.map((y) => (
+                    {shown.slice(0, limit).map((y) => (
                       <tr key={`${y.c.id}-${y.p.id}`}>
                         <td className="stick left"><b>{y.p.name}</b><small className="muted" style={{ display: 'block' }}>{ONE[y.p.category]}</small></td>
                         <td><CenterTag R={R} c={y.c} /></td>

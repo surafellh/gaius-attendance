@@ -12,6 +12,8 @@ export default function HqAttendance({ R, C, today, period, setPeriod, openPerso
   const [show, setShow] = useState('present');        // present | rate
   const [list, setList] = useState('dropped');
   const [only, setOnly] = useState(null);
+  const page = R.config?.lists?.pageSize || 40;
+  const [limit, setLimit] = useState(page);
   const sundays = [...new Set(C.flatMap((x) => x.idx.held.filter((s) => s >= P.from && s <= P.to && s <= today)))].sort().reverse();
   const followed = useMemo(() => C.flatMap(followedPeople), [C]);
   const cur = FOLLOW_LISTS.find((l) => l.key === list);
@@ -42,7 +44,7 @@ export default function HqAttendance({ R, C, today, period, setPeriod, openPerso
         </div>
         <h3 className="section-h small">{cur.label} · {only ? R.centers.find((c) => c.id === only)?.name : 'all centers'} <span className="muted">({people.length})</span></h3>
         {people.length === 0 ? <p className="muted small">Nobody.</p> : (
-          <div className="people-grid">{people.map((y) => (
+          <><div className="people-grid">{people.slice(0, limit).map((y) => (
             <div key={`${y.c.id}-${y.p.id}`} className="list-row">
               <Initials name={y.p.name} category={y.p.category} />
               <button className="pinfo" onClick={() => openPerson(y.c.id, y.p.id)}>
@@ -53,6 +55,7 @@ export default function HqAttendance({ R, C, today, period, setPeriod, openPerso
               {perm.profiles && y.p.phone && <a className="icon-btn" href={telLink(y.p.phone)} aria-label={`Call ${y.p.name}`}><Icon.phone width="18" height="18" /></a>}
             </div>
           ))}</div>
+          {people.length > limit && <button className="btn ghost small" style={{ marginTop: 10 }} onClick={() => setLimit(limit + page)}>Show more ({people.length - limit} left)</button>}</>
         )}
       </section>
 

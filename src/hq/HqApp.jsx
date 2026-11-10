@@ -28,8 +28,13 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
   const [week, setWeek] = useState(null);
   const [period, setPeriod] = useState(() => ({ kind: 'sem', no: semNo(semesterOf(today)), year: semYear(semesterOf(today)) }));
   const U = useUndo();
-  const C = useMemo(() => allCenters(R, today), [R, today]);
-  const upcoming = useMemo(() => agenda(R, today, addDays(today, 30)), [R, today]);
+  // focus: pick one or more centers and every HQ page shows only them (none picked = all centers)
+  const [focus, setFocusState] = useState(() => { try { return JSON.parse(localStorage.getItem('gaius-hq-focus') || '[]'); } catch { return []; } });
+  const setFocus = (f) => { setFocusState(f); try { localStorage.setItem('gaius-hq-focus', JSON.stringify(f)); } catch { /* private mode */ } };
+  const live = focus.filter((id) => R.centers.some((c) => c.id === id));
+  const RF = useMemo(() => (live.length ? { ...R, centers: R.centers.filter((c) => live.includes(c.id)) } : R), [R, live.join()]); // eslint-disable-line
+  const C = useMemo(() => allCenters(RF, today), [RF, today]);
+  const upcoming = useMemo(() => agenda(RF, today, addDays(today, 30)), [RF, today]);
   const hqPerm = { ...perm, hqView: true, switchCenter: true, studio: false };
   const nav = NAV.filter(([k]) => k !== 'finance' || perm.finance);
   const adminCtx = C[0] ? { ...C[0], perm, profile, reload, setError, config: R.config, today, semStart: today } : null;
@@ -42,7 +47,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
   const unread = unreadOf(null);
   const initials = (realProfile.full_name || realProfile.email || '?').trim()[0].toUpperCase();
   const px = person && C.find((x) => x.c.id === person.cid);
-  const common = { R, C, today, perm: hqPerm, reload, setError, period, setPeriod, openCenter, openPerson, go };
+  const common = { R: RF, C, today, perm: hqPerm, reload, setError, period, setPeriod, openCenter, openPerson, go };
 
   return (
     <div className="app hq">
@@ -78,6 +83,17 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
           <button key={k} className={tab === k && !centerOpen ? 'on' : ''} onClick={() => go(k)}><Ico />{l}{k === 'messages' && unread ? <span className="badge">{unread}</span> : null}</button>
         ))}
       </nav>
+      {R.centers.length > 1 && !centerOpen && tab !== 'users' && (
+        <div className="hq-focus" role="group" aria-label="Focus on centers">
+          <span className="hq-focus-label">Focus</span>
+          <button className={`chipbtn ${!live.length ? 'on' : ''}`} onClick={() => setFocus([])}>All centers</button>
+          {R.centers.map((c) => { const on = live.includes(c.id); return (
+            <button key={c.id} className={`chipbtn ${on ? 'on' : ''}`} style={{ '--cc': colorOf(R, c.id) }} aria-pressed={on}
+              onClick={() => setFocus(on ? live.filter((x) => x !== c.id) : [...live, c.id])}><i className="cdot" />{c.name}{c.international ? ' 🌍' : ''}</button>
+          ); })}
+          {live.length > 0 && <span className="tiny muted">{live.length} of {R.centers.length} · tap more to compare</span>}
+        </div>
+      )}
       <main>
         {error && <div className="banner err" style={{ marginBottom: 12 }}>{error} <button className="link small" onClick={() => setError('')}>Dismiss</button></div>}
         {loading ? <div className="center muted">Loading every center…</div> : centerOpen ? (

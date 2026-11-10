@@ -1,4 +1,5 @@
 // History downloads: anything the app has recorded, for any period (a month, a semester, a year, all time).
+import { curLabel } from './plans';
 import { etLabel, fmtGreg, addDays, weekdayOf } from './ethiopian.js';
 import { summaryTable, gridTable, programReport, REPORT_CATS } from './exports.js';
 import { counts, ONE } from './stats.js';
@@ -97,9 +98,9 @@ export function financeHistory(ctx, from, to, label) {
   const sum = (d) => list.filter((l) => l.direction === d).reduce((n, l) => n + Number(l.amount || 0), 0);
   return {
     title: `Gaius ${C(ctx)} – money in / out, ${label}`, file: fileOf(ctx, 'money', label), sub: `In ${sum('in').toLocaleString()} · out ${sum('out').toLocaleString()} · balance ${(sum('in') - sum('out')).toLocaleString()} birr`,
-    sheets: [{ name: 'Money in & out', head: ['Date', 'In / out', 'Amount (birr)', 'Category', 'Department', 'Description', 'Receipt'],
+    sheets: [{ name: 'Money in & out', head: ['Date', 'In / out', `Amount (${curLabel()})`, 'Category', 'Department', 'Description', 'Receipt'],
       body: list.map((l) => [etLabel(l.entry_date, true), l.direction === 'in' ? 'In' : 'Out', Number(l.amount), l.category || '', dn(l.department_id), l.description || '', l.receipt_ref || '']) },
-      { name: 'Assets', head: ['Item', 'Category', 'Quantity', 'Condition', 'Where', 'From', 'Since', 'Value (birr)', 'Notes'],
+      { name: 'Assets', head: ['Item', 'Category', 'Quantity', 'Condition', 'Where', 'From', 'Since', `Value (${curLabel()})`, 'Notes'],
         body: ctx.D.assets.map((a) => [a.name, a.category || '', a.quantity ?? '', a.condition || '', a.location || '', a.source || '', a.acquired_on ? etLabel(a.acquired_on, true) : '', a.value ?? '', a.notes || '']) }],
   };
 }

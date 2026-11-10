@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { ONE } from '../lib/stats';
 import { Sheet, Initials, Icon } from './common';
 import { semesterOf, semName } from '../lib/ethiopian';
-import { deptColor, semesterItems, itemWhen } from '../lib/plans';
+import { deptColor, semesterItems, itemWhen, curLabel } from '../lib/plans';
 
 export default function Departments({ D, perm, openPerson, reload, setError, today, go }) {
   const [edit, setEdit] = useState(null);
@@ -47,7 +47,7 @@ export default function Departments({ D, perm, openPerson, reload, setError, tod
               <div className="dcard-stats">
                 <div><b>{ms.length}</b><span>people</span></div>
                 <div><b>{its.length ? `${doneN}/${due.length}` : '–'}</b><span>plans done</span></div>
-                <div><b>{budget ? budget.toLocaleString() : '–'}</b><span>birr budget</span></div>
+                <div><b>{budget ? budget.toLocaleString() : '–'}</b><span>{curLabel()} budget</span></div>
               </div>
               {its.length > 0 && <div className="progress"><span style={{ width: `${due.length ? (doneN / due.length) * 100 : 0}%`, background: c }} /></div>}
               <div className="dcard-people">

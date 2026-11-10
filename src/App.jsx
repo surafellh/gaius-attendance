@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase, fetchAll } from './lib/supabase';
 import { latestSunday, todayIso, semesterOf, semesterStart, etLabel } from './lib/ethiopian';
 import { indexAttendance, activeOn, weekSummary } from './lib/stats';
-import { can, roleName, setRoleNames } from './lib/roles';
+import { can, roleName, setRoleNames, setRoles } from './lib/roles';
 import Dashboard from './views/Dashboard';
 import Attendance from './views/Attendance';
 import FollowUp from './views/FollowUp';
@@ -25,7 +25,8 @@ import HqApp from './hq/HqApp';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 import { scopeToCenter } from './lib/scope';
-import { buildConfig, DEFAULT_CONFIG } from './lib/config';
+import { buildConfig, DEFAULT_CONFIG, featureOn, curOf } from './lib/config';
+import { setCurrency } from './lib/plans';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -67,14 +68,16 @@ export default function App() {
 }
 
 /* The menu: five sections, each with a few tabs. Messages, downloads, undo, studio and app admin sit in the header. */
-function sectionsFor(perm) {
+function sectionsFor(perm, center) {
+  const on = (k) => featureOn(center, k);
+  const keep = ([k]) => on(k);
   return [
     ['home', 'Home', Icon.home, [['home', 'Dashboard']]],
-    ['att', 'Attendance', Icon.check, [['attendance', 'Sunday sheet'], ...(perm.hqView ? [] : [['calls', 'Calls']])]],
-    ['people', 'People', Icon.people, [['people', 'Everyone'], ...(perm.profiles ? [['leadership', 'Leadership']] : []), ['roadmap', 'Roadmap']]],
-    ['plans', 'Plans', Icon.cal, [['calendar', 'Calendar'], ['plans', perm.hqView ? 'Plans & budget' : 'Plans & budget'], ['meeting', 'Meetings'], ...(perm.studio ? [['departments', 'Departments']] : [])]],
-    ...(perm.finance ? [['finance', 'Finance', Icon.card, [['finance', 'Admin & finance']]]] : []),
-  ];
+    ['att', 'Attendance', Icon.check, [['attendance', 'Sunday sheet'], ...(perm.hqView ? [] : [['calls', 'Calls']])].filter(keep)],
+    ['people', 'People', Icon.people, [['people', 'Everyone'], ...(perm.profiles ? [['leadership', 'Leadership']] : []), ['roadmap', 'Roadmap']].filter(keep)],
+    ['plans', 'Plans', Icon.cal, [['calendar', 'Calendar'], ['plans', 'Plans & budget'], ['meeting', 'Meetings'], ...(perm.studio ? [['departments', 'Departments']] : [])].filter(keep)],
+    ...(perm.finance && on('finance') ? [['finance', 'Finance', Icon.card, [['finance', 'Admin & finance']]]] : []),
+  ].filter((g) => g[3].length);
 }
 const HEADER_TABS = ['messages', 'users'];
 const VIEW_KEY = 'gaius-studio';
@@ -131,13 +134,14 @@ function Main({ profile: realProfile }) {
       try { Object.assign(p2, { activities: await q('hq_activities'), r6: true }); } catch { Object.assign(p2, { activities: [], r6: false }); }
       try {
         const [caps, sets] = await Promise.all([q('role_caps'), q('app_settings')]);
+        try { const roles = await q('app_roles'); setRoles(roles); p2.roles = roles; p2.r8 = true; } catch { p2.roles = []; p2.r8 = false; }
         const settings = Object.fromEntries(sets.map((x) => [x.key, x.value]));
         Object.assign(p2, { config: buildConfig(caps, settings), r7: true });
       } catch { Object.assign(p2, { config: DEFAULT_CONFIG, r7: false }); }
       setRoleNames(p2.config.roleNames);
       try { const rows = await q('site_info'); Object.assign(p2, { site: Object.fromEntries(rows.map((r) => [r.key, r.value])), r5: true }); } catch { Object.assign(p2, { site: {}, r5: false }); }
       setR({
-        centers: centers.sort((a, b) => a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
+        allCenters: centers.sort((a, b) => (a.sort ?? a.id) - (b.sort ?? b.id) || a.id - b.id), centers: centers.filter((c) => c.active !== false).sort((a, b) => (a.sort ?? a.id) - (b.sort ?? b.id) || a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
         att, programs, departments: departments.sort((a, b) => a.sort - b.sort), members, assignments, history, ...p2,
       });
     } catch (e) {
@@ -158,6 +162,7 @@ function Main({ profile: realProfile }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []); // eslint-disable-line
   const D = useMemo(() => scopeToCenter(R, centerId), [R, centerId]);
+  setCurrency(curOf(D.center));
 
   const idx = useMemo(() => indexAttendance(D.att), [D.att]);
   const today = todayIso();
@@ -273,7 +278,7 @@ function Main({ profile: realProfile }) {
       && idx.byPerson[r.person_id]?.[idx.held[idx.held.indexOf(latest) - 1]]?.status === 'Present').length;
   }, [idx, latest, personBy]);
 
-  const groups = sectionsFor(perm);
+  const groups = sectionsFor(perm, D.center);
   const allTabs = groups.flatMap((g) => g[3].map(([k]) => k));
   const shownTab = allTabs.includes(tab) || HEADER_TABS.includes(tab) ? tab : groups[0][3][0][0];
   const cur = HEADER_TABS.includes(shownTab) ? null : groups.find((g) => g[3].some(([k]) => k === shownTab));
@@ -322,9 +327,9 @@ function Main({ profile: realProfile }) {
                 <button className="top-icon" disabled={!U.canRedo || U.busy} onClick={() => doUndo(redo, 'Redone')} title={U.canRedo ? `Redo: ${U.redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><Icon.redo /></button>
               </span>
             )}
-            <button className={`top-icon ${tab2 === 'messages' ? 'on' : ''}`} onClick={() => goTab('messages')} aria-label="Messages" title="Messages">
+            {featureOn(D.center, 'messages') && <button className={`top-icon ${tab2 === 'messages' ? 'on' : ''}`} onClick={() => goTab('messages')} aria-label="Messages" title="Messages">
               <Icon.mail />{unread ? <span className="dot-badge">{unread}</span> : null}
-            </button>
+            </button>}
             {perm.download && <button className="top-icon hide-phone" onClick={() => setExporting({})} aria-label="Downloads and reports" title="Downloads"><Icon.download /></button>}
             {perm.canStudio && (
               <button className={`mode-toggle ${perm.studio ? 'on' : ''}`} onClick={() => setMode(!studio)} title={perm.studio ? 'Studio mode: every detail. Tap for the simple view.' : 'Simple view. Tap for Studio mode (every detail).'} aria-pressed={perm.studio}>

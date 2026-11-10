@@ -36,8 +36,18 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
       const came = held.filter((s) => m[s].status === 'Present').length;
       return { p, c: x.c, held: held.length, came, v: held.length ? came / held.length : null, dots: weeks.slice(-12).map((s) => m[s]?.status) };
     });
-  }).filter((r) => r.v != null && r.held >= 2).sort((a, b) => (dir === 'top' ? b.v - a.v : a.v - b.v) || b.held - a.held).slice(0, 10), [C, only, rankBy, dir, P.from, P.to, today]);
-  const promise = C.flatMap((x) => promising(x, 6)).sort((a, b) => b.r.sinceRate - a.r.sinceRate).slice(0, 8);
+  }).filter((r) => r.v != null && r.held >= 2).sort((a, b) => (dir === 'top' ? b.v - a.v : a.v - b.v) || b.held - a.held).slice(0, R.config?.lists?.top || 10), [C, only, rankBy, dir, P.from, P.to, today, R.config]);
+  const [pOnly, setPOnly] = useState(null);   // a center picked in Promising members
+  const [uOnly, setUOnly] = useState(null);   // … and in Coming up
+  const promise = C.filter((x) => !pOnly || x.c.id === pOnly).flatMap((x) => promising(x, R.config?.lists?.top || 8)).sort((a, b) => b.r.sinceRate - a.r.sinceRate).slice(0, R.config?.lists?.top || 8);
+  const up = upcoming.filter((u) => !uOnly || (uOnly === 'hq' ? !u.c : u.c?.id === uOnly));
+  const Pick = ({ value, set, hq }) => (
+    <div className="chips card-filter">
+      <button className={`chipbtn tiny-chip ${!value ? 'on' : ''}`} onClick={() => set(null)}>All</button>
+      {hq && <button className={`chipbtn tiny-chip ${value === 'hq' ? 'on' : ''}`} onClick={() => set('hq')}>HQ</button>}
+      {R.centers.map((c) => <button key={c.id} className={`chipbtn tiny-chip ${value === c.id ? 'on' : ''}`} onClick={() => set(value === c.id ? null : c.id)}>{c.name}</button>)}
+    </div>
+  );
   const followed = C.flatMap(followedPeople);
   const needCall = followed.filter((y) => y.f.lastWeek === 'Present' && y.f.thisWeek === 'Absent');
   const three = followed.filter((y) => y.f.streak >= 3);
@@ -161,7 +171,8 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
         </section>)}
 
         {slot('promising', <section className="card">
-          <div className="card-head"><div><div className="card-title">Promising members</div><div className="card-sub">New comers coming most faithfully since their first visit (4+ Sundays), every center.</div></div></div>
+          <div className="card-head"><div><div className="card-title">Promising members</div><div className="card-sub">New comers coming most faithfully since their first visit (4+ Sundays){pOnly ? '' : ', every center'}.</div></div></div>
+          {R.centers.length > 1 && <Pick value={pOnly} set={setPOnly} />}
           {promise.length === 0 ? <p className="muted small">No new comers with 4 or more Sundays yet.</p> : (
             <ol className="rank-list">{promise.map((v, i) => (
               <li key={v.p.id} className="rank-item">
@@ -174,9 +185,10 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
         </section>)}
 
         {slot('upcoming', <section className="card">
-          <div className="card-head"><div><div className="card-title">Coming up</div><div className="card-sub">HQ plans and every center’s planned dates, next 30 days.</div></div><button className="btn ghost small" onClick={() => go('plans')}>All plans</button></div>
-          {upcoming.length === 0 ? <p className="muted small">Nothing planned in the next 30 days.</p> : (
-            <ul className="hq-agenda">{upcoming.slice(0, 8).map((u) => (
+          <div className="card-head"><div><div className="card-title">Coming up</div><div className="card-sub">HQ plans and every center’s planned dates, next 30 days.</div></div><button className="btn ghost small" onClick={() => go('plans')}>Calendar</button></div>
+          {R.centers.length > 1 && <Pick value={uOnly} set={setUOnly} hq />}
+          {up.length === 0 ? <p className="muted small">Nothing planned in the next 30 days.</p> : (
+            <ul className="hq-agenda">{up.slice(0, R.config?.lists?.top || 10).map((u) => (
               <li key={u.key}><span className="when">{etLabel(u.date)}</span><span className="what am">{u.title}</span>{u.c ? <CenterTag R={R} c={u.c} /> : <span className="ctag hq">HQ</span>}</li>
             ))}</ul>
           )}

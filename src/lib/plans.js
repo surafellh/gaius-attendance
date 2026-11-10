@@ -1,3 +1,4 @@
+import { money } from './config';
 // Department plans: each plan has items (one per date, week or month) that get marked done / not done.
 import { supabase } from './supabase';
 import { toEthiopian, ET_MONTHS, etLabel, addDays, WEEKDAYS, weekdayOf, monthRange } from './ethiopian';
@@ -24,7 +25,11 @@ export const needsReason = (it, today) => effStatus(it, today) === 'not_done' &&
 export const isPostponed = (it) => !!it.moved_from && it.status === 'planned';
 export const KIND_LABEL = { day: 'On the day', week: 'Weekly', month: 'During the month', period: 'Any time this semester' };
 
-export const birr = (n) => (n ? `${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })} birr` : '–');
+// the money of the center being shown (set when the center changes); HQ pages pass each center's own currency
+let CUR = 'ETB';
+export const setCurrency = (c) => { CUR = c || 'ETB'; };
+export const curLabel = () => (CUR === 'ETB' ? 'birr' : CUR);
+export const birr = (n, cur) => money(n, cur || CUR);
 
 /* the items of a semester, joined with their plan */
 export function semesterItems(D, sem) {

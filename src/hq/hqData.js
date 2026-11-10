@@ -5,7 +5,7 @@ import { FOLLOWED, personFacts, readiness } from '../lib/stats';
 import { toEthiopian, ET_MONTHS, semesterOf, semesterStart } from '../lib/ethiopian';
 
 export const CENTER_COLORS = ['#4f8a12', '#2a78d6', '#eb6834', '#8a5cd6', '#e0a100', '#0f9bb5', '#d6457a', '#6b7d2a'];
-export const colorOf = (R, id) => CENTER_COLORS[Math.max(0, R.centers.findIndex((c) => c.id === id)) % CENTER_COLORS.length];
+export const colorOf = (R, id) => CENTER_COLORS[(Math.max(1, id) - 1) % CENTER_COLORS.length]; // fixed per center, so focusing keeps the colours
 
 /* one entry per center: its own context (D, idx, latest…) plus the HQ numbers */
 export function allCenters(R, today) {
@@ -86,15 +86,17 @@ export function agenda(R, from, to) {
   const out = [];
   for (const a of R.activities || []) {
     const d = a.starts_on || a.due;
+    if (a.center_id && !cBy[a.center_id]) continue;
     if (d && d >= from && d <= to && a.status !== 'cancelled') out.push({ key: `a${a.id}`, date: d, end: a.due, title: a.title, sub: [a.kind, a.owner].filter(Boolean).join(' · '), c: a.center_id ? cBy[a.center_id] : null, type: 'hq', budget: a.budget, src: a });
   }
   for (const e of R.events || []) {
-    if (e.starts_on >= from && e.starts_on <= to) out.push({ key: `e${e.id}`, date: e.starts_on, end: e.ends_on, title: e.title, sub: [e.kind, e.location].filter(Boolean).join(' · '), c: e.center_id ? cBy[e.center_id] : null, type: 'event' });
+    if (e.center_id && !cBy[e.center_id]) continue;
+    if (e.starts_on <= to && (e.ends_on || e.starts_on) >= from) out.push({ key: `e${e.id}`, date: e.starts_on, end: e.ends_on, title: e.title, sub: [e.kind, e.location].filter(Boolean).join(' · '), c: e.center_id ? cBy[e.center_id] : null, type: 'event' });
   }
   for (const i of R.items || []) {
     const p = planBy[i.plan_id];
-    if (!p || i.status === 'cancelled' || i.due < from || i.due > to) continue;
-    out.push({ key: `i${i.id}`, date: i.due, title: p.title + (i.label ? ` – ${i.label}` : ''), sub: [deptBy[p.department_id]?.name, i.due_kind === 'month' ? 'during the month' : i.due_kind === 'period' ? 'any time this semester' : i.due_kind === 'week' ? 'that week' : null].filter(Boolean).join(' · '), c: cBy[p.center_id ?? 1], type: 'plan', budget: i.budget });
+    if (!p || i.status === 'cancelled' || i.due < from || i.due > to || !cBy[p.center_id ?? 1]) continue;
+    out.push({ key: `i${i.id}`, date: i.due, title: p.title + (i.label ? ` – ${i.label}` : ''), sub: [deptBy[p.department_id]?.name, i.due_kind === 'month' ? 'during the month' : i.due_kind === 'period' ? 'any time this semester' : i.due_kind === 'week' ? 'that week' : null].filter(Boolean).join(' · '), c: cBy[p.center_id ?? 1], type: 'plan', budget: i.budget, kind: i.due_kind || 'day' });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }

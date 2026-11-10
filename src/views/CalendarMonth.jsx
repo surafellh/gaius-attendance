@@ -8,7 +8,8 @@ const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const mark = { done: '✓', not_done: '✕', cancelled: '–' };
 
 /* Month calendar: Sunday programs, events and department plans, colour-coded by department */
-export default function CalendarMonth({ D, today, perm, progBy, reload, setError }) {
+export default function CalendarMonth({ D, today, perm, progBy, reload, setError, config }) {
+  const overlapAt = config?.calendar?.overlap || 2;   // Settings → Dashboard → Calendar
   const plain = perm.hqView; // HQ sees the planned dates, not done / not done
   const [month, setMonth] = useState(() => monthOf(today));
   const [off, setOff] = useState(() => new Set());
@@ -32,6 +33,8 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
     events: events.filter((e) => e.starts_on <= d && (e.ends_on || e.starts_on) >= d),
     items: dayItems.filter((i) => i.due === d),
   });
+  // days with overlapping plans and events (more than one thing on the same day)
+  const clashes = days.filter((d) => { const x = onDay(d); return x.items.length + x.events.length >= overlapAt; });
   const weeklyPlans = [...new Map(weekly.map((i) => [i.plan_id, i.plan])).values()];
   const toggle = (id) => setOff((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -70,6 +73,12 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
         </div>
       )}
 
+      {clashes.length > 0 && (
+        <div className="banner warn clash-banner">
+          <span><b>{clashes.length} day{clashes.length > 1 ? 's' : ''} with overlapping plans</b> ({overlapAt}+ plans or events on the same day):</span>
+          <span className="clash-days">{clashes.map((d) => <button key={d} className="chipbtn tiny-chip" onClick={() => setDay(d)}>⚠ {etLabel(d)} · {onDay(d).items.length + onDay(d).events.length}</button>)}</span>
+        </div>
+      )}
       <div className="cal-grid" role="grid" aria-label={monthLabel(month)}>
         {WD.map((w, i) => <div key={w} className={`cal-wd ${i === 0 ? 'sun' : ''}`}>{w}</div>)}
         {cells.map((d, k) => {
@@ -77,8 +86,8 @@ export default function CalendarMonth({ D, today, perm, progBy, reload, setError
           const x = onDay(d);
           const e = toEthiopian(d);
           return (
-            <div key={d} className={`cal-cell ${weekdayOf(d) === 0 ? 'sun' : ''} ${d === today ? 'today' : ''}`} onClick={() => setDay(d)} role="gridcell" tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && setDay(d)}>
-              <div className="cal-num"><b>{e.day}</b><small>{fmtGreg(d)}</small></div>
+            <div key={d} className={`cal-cell ${weekdayOf(d) === 0 ? 'sun' : ''} ${d === today ? 'today' : ''} ${x.items.length + x.events.length >= overlapAt ? 'clash' : ''}`} title={x.items.length + x.events.length >= overlapAt ? `${x.items.length + x.events.length} things planned on this day` : undefined} onClick={() => setDay(d)} role="gridcell" tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && setDay(d)}>
+              <div className="cal-num"><b>{e.day}</b><small>{fmtGreg(d)}</small>{x.items.length + x.events.length >= overlapAt && <span className="clash-badge">⚠ {x.items.length + x.events.length}</span>}</div>
               {x.prog?.kind && <span className={`cal-chip prog ${x.prog.kind === 'No meeting' ? 'none' : ''}`}>{x.prog.kind}</span>}
               {x.events.map((ev) => <span key={ev.id} className="cal-chip event am">{ev.title}</span>)}
               {x.items.map((i) => <PlanChip key={i.id} i={i} D={D} today={today} plain={plain} small onClick={(evt) => { evt.stopPropagation(); setItem(i); }} />)}

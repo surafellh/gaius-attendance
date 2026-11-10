@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { etLabel, fmtGreg, groupByMonth, toEthiopian, sundaysOf, semesterOf, SEMESTERS, todayIso, semName, semKey, semesterStart, semesterEnd, monthRange, yearRange, ET_MONTHS } from '../lib/ethiopian';
+import { etLabel, fmtGreg, groupByMonth, toEthiopian, sundaysOf, semesterOf, SEMESTERS, todayIso, semName, semKey, semesterStart, semesterEnd, yearOptions, monthRange, yearRange, ET_MONTHS } from '../lib/ethiopian';
 import { pct } from '../lib/stats';
 import { findPeople } from '../lib/names';
 
@@ -263,8 +263,9 @@ export function periodOf(v) {
   return { from: semesterStart(sem), to: semesterEnd(sem), label: semName(sem), sem };
 }
 /* the period for charts and lists: a semester, the whole Ethiopian year, the last 12 months, a month, or everything */
-export function PeriodPicker({ value, onChange, years }) {
+export function PeriodPicker({ value, onChange, years: dataYears = [] }) {
   const y = value.year;
+  const years = yearOptions([...dataYears, value.year]);
   const k = value.kind;
   const yearless = k === 'last12' || k === 'all';
   return (

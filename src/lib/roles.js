@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, CAPS } from './config';
+import { DEFAULT_CONFIG, CAPS, CENTER_ROLE_KEYS, HQ_ROLE_KEYS } from './config';
 // Who can do what. The database enforces the same rules (can_read / can_mark / can_manage).
 // Only the Coordinator (አገልግሎት አስተባባሪ), the Follow-up leader and the admin change data; everyone else views.
 export const ROLES = [
@@ -20,6 +20,17 @@ export const setRoleNames = (n) => { NAMES = n || {}; };
 export const roleName = (r) => NAMES[r] || ROLES.find((x) => x[0] === r)?.[1] || r;
 export const HQ_ROLES = ['admin', 'founder', 'director', 'hq_followup', 'hq_staff'];
 const HQ_ONLY = ['founder', 'director', 'hq_followup', 'hq_staff'];
+export const ROLE_SIDE = {};   // role → 'center' | 'hq'
+const fill = (arr, items) => { arr.splice(0, arr.length, ...items); };
+/* roles come from the app_roles table (Settings → Roles); the lists above are updated in place so every page sees them */
+export function setRoles(rows) {
+  if (!rows?.length) return;
+  const sorted = [...rows].sort((a, b) => (a.side === b.side ? 0 : a.side === 'hq' ? -1 : 1) || (a.sort ?? 100) - (b.sort ?? 100) || a.name.localeCompare(b.name));
+  fill(ROLES, [ROLES.find((r) => r[0] === 'admin'), ...sorted.map((r) => [r.key, r.name, r.description || '']), ['former', 'Former leader', 'No access – record kept'], ['pending', 'Waiting for approval', 'No access yet']]);
+  const hq = sorted.filter((r) => r.side === 'hq').map((r) => r.key), center = sorted.filter((r) => r.side === 'center').map((r) => r.key);
+  fill(HQ_ROLES, ['admin', ...hq]); fill(HQ_ONLY, hq); fill(HQ_ROLE_KEYS, hq); fill(CENTER_ROLE_KEYS, center);
+  for (const r of rows) ROLE_SIDE[r.key] = r.side;
+}
 
 /* the account's HQ role: its main role when it is HQ only, else the extra HQ role (or none) */
 export const hqRoleOf = (p) => (HQ_ONLY.includes(p?.role) ? p.role : p?.hq_role || null);

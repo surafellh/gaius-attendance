@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { etLabel, fmtGreg, semesterOf, semName, SEMESTERS, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, ET_MONTHS_AM, monthRange, addDays, semNo, semYear, semKey, WEEKDAYS, weekdayOf } from '../lib/ethiopian';
 import { parseAnyDate, parseMonths } from '../lib/teaching';
-import { deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen, effStatus, needsReason, isPostponed } from '../lib/plans';
+import { curLabel, deptColor, deptName, STATUS, KIND_LABEL, birr, semesterItems, itemState, monthKeyOf, monthName, saveItem, nextWeek, nextMonth, itemWhen, effStatus, needsReason, isPostponed } from '../lib/plans';
 import { toExcel, toPdf, tableText, readSheet, rowsUnder, col, downloadTemplate } from '../lib/exports';
 import { Sheet, Icon } from './common';
 import Grid from './Grid';
+import PlanUploadSheet from './PlanUpload';
 import { recordUpdate } from '../lib/undo';
 
 export default function PlansPage(props) {
@@ -39,7 +40,7 @@ export default function PlansPage(props) {
 }
 
 /* ── Plans by department ─────────────────────────────────────────── */
-function PlanList({ D, today, perm, reload, setError, sem }) {
+function PlanList({ D, today, perm, reload, setError, sem, go, config }) {
   const [open, setOpen] = useState(null);
   const [item, setItem] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -57,7 +58,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
       <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <div className="seg" style={{ marginRight: 'auto' }}><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button><button className={view === 'cards' ? 'on' : ''} onClick={() => setView('cards')}>By department</button></div>
         <button className="btn ghost" onClick={() => toExcel(plansList(D, sem))}><Icon.download width="18" height="18" /> Download plans</button>
-        {perm.mark && <button className="btn ghost" onClick={() => setImporting(true)}><Icon.grid width="18" height="18" /> Import from Excel</button>}
+        {perm.manage && <button className="btn ghost" onClick={() => setImporting(true)}><Icon.upload width="18" height="18" /> Upload a semester plan</button>}
         {perm.mark && <button className="btn lime" onClick={() => setAdding(true)}><Icon.plus /> Add a plan</button>}
       </div>
       {plans.length === 0 && <div className="card empty">No plans for {semName(sem)} yet.{perm.mark ? ' Add them one by one, or fill the Excel template and import it.' : ''}</div>}
@@ -70,11 +71,11 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
               { key: 'title', label: 'Activity', required: true, width: 260 },
               { key: 'timing_note', label: 'When (as planned)', width: 150 },
               { key: 'dates', label: 'Dates', ro: true, width: 210, render: (p) => <button className="link small" style={{ textAlign: 'left' }} onClick={() => setOpen(p)}>{items.filter((i) => i.plan_id === p.id).slice(0, 4).map((i) => itemWhen(i)).join(' · ') || 'Add dates'}{items.filter((i) => i.plan_id === p.id).length > 4 ? ' …' : ''}</button> },
-              { key: 'budget', label: 'Budget (birr)', type: 'number', width: 110 },
+              { key: 'budget', label: `Budget (${curLabel()})`, type: 'number', width: 110 },
               { key: 'budget_note', label: 'Budget detail', width: 180 },
               { key: 'details', label: 'Details', width: 200 },
             ]} />
-          {perm.mark && <p className="tiny muted" style={{ margin: '0 14px 12px' }}>Add new plans with “Add a plan” or Import from Excel; tap the dates to mark them done or move them.</p>}
+          {perm.mark && <p className="tiny muted" style={{ margin: '0 14px 12px' }}>Add new plans with “Add a plan” or upload a semester plan (English or Amharic); tap the dates to mark them done or move them.</p>}
         </section>
       )}
       {view === 'cards' && <div className="dept-plans">
@@ -120,7 +121,7 @@ function PlanList({ D, today, perm, reload, setError, sem }) {
       {open && <PlanSheet plan={open} D={D} today={today} perm={perm} onClose={() => setOpen(null)} onItem={(i) => setItem(i)} reload={reload} setError={setError} />}
       {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
       {adding && <NewPlanSheet D={D} sem={sem} onClose={() => setAdding(false)} reload={reload} setError={setError} />}
-      {importing && <ImportPlansSheet D={D} sem={sem} onClose={() => setImporting(false)} reload={reload} setError={setError} />}
+      {importing && <PlanUploadSheet D={D} sem={sem} onClose={() => setImporting(false)} reload={reload} setError={setError} go={go} config={config} />}
     </>
   );
 }
@@ -172,7 +173,7 @@ export function ItemSheet({ item, D, perm, onClose, reload, setError }) {
         {due !== item.due && <label className="check"><input type="checkbox" checked={fix} onChange={(e) => setFix(e.target.checked)} /> The date was entered wrong – this is a correction, not a postponement</label>}
         {moved && <label>Postponing approved by<input value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} placeholder="e.g. leaders’ meeting Tikimt 11, center leader" /></label>}
         <div className="row2">
-          <label>Budget for this item (birr)<input inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!perm.mark} /></label>
+          <label>Budget for this item ({curLabel()})<input inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!perm.mark} /></label>
           <label>Note<input value={note} onChange={(e) => setNote(e.target.value)} disabled={!perm.mark} /></label>
         </div>
         {plan?.budget_note && <p className="tiny muted am" style={{ margin: 0 }}>Budget detail: {plan.budget_note}</p>}
@@ -196,7 +197,7 @@ function PlanSheet({ plan, D, today, perm, onClose, onItem, reload, setError }) 
         <div className="row3">
           <label>Department<select value={f.department_id || ''} onChange={set('department_id')} disabled={!perm.mark}>{D.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
           <label>When (as planned)<input value={f.timing_note} onChange={set('timing_note')} disabled={!perm.mark} /></label>
-          <label>Total budget (birr)<input inputMode="numeric" value={f.budget} onChange={set('budget')} disabled={!perm.mark} /></label>
+          <label>Total budget ({curLabel()})<input inputMode="numeric" value={f.budget} onChange={set('budget')} disabled={!perm.mark} /></label>
         </div>
         <label>Budget detail<input value={f.budget_note} onChange={set('budget_note')} disabled={!perm.mark} /></label>
         {perm.mark && <button className="btn ghost" onClick={() => run(supabase.from('plans').update({ ...f, budget: Number(f.budget) || 0, department_id: Number(f.department_id) }).eq('id', plan.id))}>Save plan</button>}
@@ -280,7 +281,7 @@ function NewPlanSheet({ D, sem: sem0, onClose, reload, setError }) {
         {outside && <p className="banner warn" style={{ margin: 0 }}>A date is outside {semName(sem)}.</p>}
         {f.kind === 'month' && <div className="chips">{semMonths.map((m) => <label key={m} className="check"><input type="checkbox" checked={f.months.includes(m)} onChange={(e) => setF({ ...f, months: e.target.checked ? [...f.months, m] : f.months.filter((x) => x !== m) })} /> {ET_MONTHS[m]}</label>)}</div>}
         <div className="row2">
-          <label>Budget (birr, total)<input inputMode="numeric" value={f.budget} onChange={set('budget')} placeholder="– if none" /></label>
+          <label>Budget ({curLabel()}, total)<input inputMode="numeric" value={f.budget} onChange={set('budget')} placeholder="– if none" /></label>
           <label>Budget detail<input value={f.budget_note} onChange={set('budget_note')} /></label>
         </div>
         <button className="btn lime wide" disabled={busy}>{busy ? 'Saving…' : 'Add plan'}</button>
@@ -290,7 +291,7 @@ function NewPlanSheet({ D, sem: sem0, onClose, reload, setError }) {
 }
 
 /* ── Excel: the semester's plans in the same layout as the import template ─── */
-const PLAN_HEAD = ['Department', 'Activity', 'Details', 'When', 'Dates or months', 'Budget (birr)', 'Budget detail', 'Prepared by'];
+const PLAN_HEAD = ['Department', 'Activity', 'Details', 'When', 'Dates or months', 'Budget', 'Budget detail', 'Prepared by'];
 const WHEN = [['day', 'On dates'], ['week', 'Every week'], ['month', 'In months'], ['period', 'Any time']];
 const dateCell = (d) => { const e = toEthiopian(d); return `${ET_MONTHS_AM[e.month]} ${String(e.day).padStart(2, '0')}`; };
 export function plansList(D, sem) {
@@ -302,90 +303,6 @@ export function plansList(D, sem) {
     return [deptName(D, p.department_id), p.title, p.details || '', WHEN.find((w) => w[0] === k)[1], when, Number(p.budget) || '', p.budget_note || '', p.prepared_by || ''];
   });
   return { title: `Gaius ${D.center?.name || ''} – plans, ${semName(sem)}`, file: `Gaius_${D.center?.name || ''}_plans_${sem.replace(' ', '_')}`, sub: `${plans.length} plans`, sheets: [{ name: 'Plans', head: PLAN_HEAD, body }] };
-}
-
-function ImportPlansSheet({ D, sem: sem0, onClose, reload, setError }) {
-  const [no, setNo] = useState(semNo(sem0));
-  const [year, setYear] = useState(semYear(sem0));
-  const sem = semKey(no, Number(year) || semYear(sem0));
-  const [rows, setRows] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(0);
-  const findDept = (v) => {
-    const t = String(v || '').trim().toLowerCase();
-    if (!t) return null;
-    return D.departments.find((d) => [d.name, d.name_am].some((n) => n && n.toLowerCase() === t))
-      || D.departments.find((d) => [d.name, d.name_am].some((n) => n && (n.toLowerCase().includes(t) || t.includes(n.toLowerCase()))));
-  };
-  async function template() {
-    await downloadTemplate(`Plan_template_${semName(sem).replace(/\W+/g, '_')}`, 'Plans',
-      `Plans · ${semName(sem)} · one activity per row. When: On dates / Every week / In months / Any time. Dates like ጥቅምት 15, ኅዳር 20 (or 2026-10-25); months like Tikimt, Hidar. Departments: ${D.departments.map((d) => d.name).join(', ')}`,
-      PLAN_HEAD, [[D.departments[0]?.name || 'Follow-up', 'Example – delete this row', 'What and why', 'On dates', 'ጥቅምት 15, ኅዳር 20', 1500, 'Transport and snacks', '']], [18, 34, 30, 12, 26, 12, 24, 16]);
-  }
-  async function readFile(file) {
-    try {
-      const { head, rows: list } = rowsUnder(await readSheet(file), ['department', 'ክፍል']);
-      const c = { d: col(head, 'department', 'ክፍል'), a: col(head, 'activity', 'plan', 'ተግባር'), de: col(head, 'detail'), w: col(head, 'when'), x: col(head, 'dates', 'date', 'month'), b: col(head, 'budget (', 'budget'), bd: col(head, 'budget detail'), p: col(head, 'prepared') };
-      if (c.d < 0 || c.a < 0) return setError('The sheet needs “Department” and “Activity” columns – use the template.');
-      const y = Number(year);
-      setRows(list.map(({ line, cells }) => {
-        const get = (i) => (i >= 0 ? cells[i] : '');
-        const title = String(get(c.a) || '').trim();
-        const dept = findDept(get(c.d));
-        const w = String(get(c.w) || '').toLowerCase();
-        const kind = /week|ሳምንት/.test(w) ? 'week' : /month|ወር/.test(w) ? 'month' : /any|period|ጊዜ/.test(w) ? 'period' : 'day';
-        const raw = get(c.x);
-        const parts = raw instanceof Date || typeof raw === 'number' ? [raw] : String(raw || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
-        const dates = kind === 'day' || kind === 'week' ? parts.map((x) => parseAnyDate(x, y)) : [];
-        const months = kind === 'month' ? parseMonths(raw) : [];
-        const problems = [];
-        if (/example/i.test(title)) problems.push('example row');
-        if (!title) problems.push('no activity');
-        if (!dept) problems.push(`department “${get(c.d)}” not found`);
-        if (kind === 'day' && (!dates.length || dates.some((d) => !d))) problems.push('a date was not understood');
-        if (kind === 'month' && !months.length) problems.push('no months');
-        if (dates.some((d) => d && (d < semesterStart(sem) || d > semesterEnd(sem)))) problems.push('date outside the semester');
-        return { line, title, dept, kind, dates: dates.filter(Boolean), months, details: String(get(c.de) || ''), budget: Number(String(get(c.b) || '').replace(/[^\d.]/g, '')) || 0, budget_note: String(get(c.bd) || ''), prepared_by: String(get(c.p) || ''), problems, use: !problems.length };
-      }));
-    } catch (e) { setError(`Couldn’t read the file: ${e.message}`); }
-  }
-  async function save() {
-    setBusy(true);
-    let n = 0;
-    for (const r of rows.filter((x) => x.use)) {
-      try { await createPlan(D, sem, { department_id: r.dept.id, title: r.title, details: r.details, budget: r.budget, budget_note: r.budget_note, prepared_by: r.prepared_by, kind: r.kind, dates: r.dates, months: r.months }); n++; setDone(n); }
-      catch (e) { setError(`Row ${r.line} not saved: ${e.message}`); break; }
-    }
-    setBusy(false); reload(); if (n) onClose();
-  }
-  const usable = (rows || []).filter((r) => r.use).length;
-  return (
-    <Sheet title="Import plans from Excel" onClose={onClose} wide>
-      <div className="form">
-        <SemesterPick no={no} year={year} setNo={setNo} setYear={setYear} />
-        <p className="small muted" style={{ margin: 0 }}>{semName(sem)}: {etLabel(semesterStart(sem), true)} – {etLabel(semesterEnd(sem), true)}. Imported plans are added to the ones already there.</p>
-        <div className="import-box">
-          <button type="button" className="btn ghost" onClick={template}><Icon.download width="18" height="18" /> Download template</button>
-          <label className="btn lime file-btn"><Icon.grid width="18" height="18" /> Choose the filled Excel file<input type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && readFile(e.target.files[0])} /></label>
-        </div>
-        {rows && (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="gtable left"><thead><tr><th /><th>Department</th><th>Activity</th><th>When</th><th>Budget</th></tr></thead>
-              <tbody>{rows.map((r, i) => (
-                <tr key={i} className={r.use ? '' : 'skipped'}>
-                  <td><input type="checkbox" checked={r.use} disabled={!r.dept || !r.title} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, use: e.target.checked } : x)))} aria-label={`Import row ${r.line}`} /></td>
-                  <td>{r.dept?.name || <span className="tag bad">?</span>}</td>
-                  <td className="am">{r.title}{r.problems.length > 0 && <div className="tiny" style={{ color: 'var(--absent)' }}>Row {r.line}: {r.problems.join(', ')}</div>}</td>
-                  <td className="small">{r.kind === 'month' ? r.months.map((m) => ET_MONTHS[m]).join(', ') : r.kind === 'period' ? 'Any time' : r.kind === 'week' ? `Weekly from ${r.dates[0] ? etLabel(r.dates[0]) : 'the start'}` : r.dates.map((d) => etLabel(d)).join(', ')}</td>
-                  <td>{r.budget ? birr(r.budget) : '–'}</td>
-                </tr>
-              ))}</tbody></table>
-          </div>
-        )}
-        <button className="btn lime" disabled={!usable || busy} onClick={save}>{busy ? `Saving ${done}/${usable}…` : `Import ${usable || ''} plan${usable === 1 ? '' : 's'}`}</button>
-      </div>
-    </Sheet>
-  );
 }
 
 /* ── Budget ──────────────────────────────────────────────────────── */
@@ -454,7 +371,7 @@ function MonthRequest({ D, today, sem, perm, reload, setError }) {
   const rep = {
     title: `Gaius ${D.center?.name || ''} – budget request, ${monthName(key)}`, file: `Gaius_${D.center?.name || ''}_budget_${monthName(key).replace(' ', '_')}`,
     sub: `${asked.length} plans · total ${birr(total)}`,
-    sheets: [{ name: 'Budget request', head: ['Date', 'Department', 'Plan', 'Budget (birr)', 'Detail'], body: [...asked.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.moved_from ? ` (postponed from ${etLabel(i.moved_from)})` : ''), Number(i.budget), i.plan.budget_note || '']), ['', '', 'Total', total, '']] }],
+    sheets: [{ name: 'Budget request', head: ['Date', 'Department', 'Plan', `Budget (${curLabel()})`, 'Detail'], body: [...asked.map((i) => [itemWhen(i), deptName(D, i.plan.department_id), i.plan.title + (i.moved_from ? ` (postponed from ${etLabel(i.moved_from)})` : ''), Number(i.budget), i.plan.budget_note || '']), ['', '', 'Total', total, '']] }],
   };
   async function toggle(i) {
     try { await saveItem(i.id, { request_skip: !i.request_skip }); reload(); } catch (e) { setError(`Not saved: ${e.message}`); }

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ROLES, accessTable, roleName, HQ_ROLES } from '../lib/roles';
-import { HQ_ROLE_KEYS } from '../lib/config';
+import { ROLES, roleName, HQ_ROLES } from '../lib/roles';
+import { AccessGrid } from './Settings';
+import { HQ_ROLE_KEYS, CENTER_ROLE_KEYS } from '../lib/config';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function Users({ D, R, perm, profile, realProfile, viewAs, setViewAs, reload }) {
   const me = realProfile || profile;
   const isAdmin = me.role === 'admin';
-  const CENTER_ROLES = ['coordinator', 'followup_leader', 'center_leader', 'leader', 'viewer', 'former', 'pending'];
+  const CENTER_ROLES = [...CENTER_ROLE_KEYS, 'former', 'pending'];
   const [list, setList] = useState([]);
   const [msg, setMsg] = useState('');
   const [c, setC] = useState({ meeting_weekday: D.center?.meeting_weekday ?? 3, meeting_time: D.center?.meeting_time || '18:00' });
@@ -93,20 +94,8 @@ export default function Users({ D, R, perm, profile, realProfile, viewAs, setVie
         </div>
       </section>
 
-      <section className="card">
-        <div className="card-title" style={{ marginBottom: 4 }}>Who can do what</div>
-        <div className="card-sub" style={{ marginBottom: 10 }}>{isAdmin ? 'Change it on the Settings tab. ' : ''}A center role’s rights apply on the center side, the HQ role’s on the HQ side. The database enforces the rules marked •.</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="gtable access">
-            <thead><tr><th>What</th>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <th key={k} title={roleName(k)}>{roleName(k).replace(' / Visionary', '')}</th>)}</tr></thead>
-            <tbody>
-              {accessTable(R.config).map(([what, who, side]) => <tr key={what}><td>{what}{['Mark', 'Progr', 'Appro', 'See F'].some((x) => what.startsWith(x)) ? ' •' : ''}</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{(side === 'center' && HQ_ROLES.includes(k) && k !== 'admin') ? <span className="faint">·</span> : who.includes(k) ? <span className="yes">✓</span> : <span className="faint">–</span>}</td>)}</tr>)}
-              <tr><td>HQ side: all centers at once</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{HQ_ROLES.includes(k) ? <span className="yes">✓</span> : <span className="faint" title="Give them an HQ role">+HQ role</span>}</td>)}</tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
+      <h2 className="section-h">Who can do what{isAdmin ? ' – tick to change' : ''}</h2>
+      <AccessGrid R={R} reload={reload} setError={(m) => setMsg(m)} editable={isAdmin} />
     </div>
   );
 }

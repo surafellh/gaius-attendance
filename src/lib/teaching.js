@@ -38,7 +38,7 @@ export function parseAnyDate(v, year) {
   if (m) {
     const [w, d] = /^\d/.test(m[1]) ? [m[2], m[1]] : [m[1], m[2]];
     const mi = etMonthIndex(w);
-    if (mi >= 0) return etDate(Number(m[3]) || year, mi, Number(d));
+    if (mi >= 0 && Number(d) >= 1 && Number(d) <= (mi === 12 ? 6 : 30)) return etDate(Number(m[3]) || year, mi, Number(d));
   }
   return null;
 }
