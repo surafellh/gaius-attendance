@@ -26,6 +26,9 @@ import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 import { scopeToCenter } from './lib/scope';
 import { buildConfig, DEFAULT_CONFIG, featureOn, curOf } from './lib/config';
+import { startTranslator, langFor, loadMyLang, saveMyLang, setTranslations, retranslate } from './lib/i18n';
+import { MyLanguage } from './views/LangPicker';
+import { setDownloadLang } from './lib/exports';
 import { setCurrency } from './lib/plans';
 
 export default function App() {
@@ -85,6 +88,9 @@ const SIDE_KEY = 'gaius-side';
 
 function Main({ profile: realProfile }) {
   const [viewAs, setViewAs] = useState(null);          // admin only: see the app as another role
+  const [myLang, setMyLangState] = useState(loadMyLang);   // this person's language choice (Account)
+  const setMyLang = (v) => { setMyLangState(v); saveMyLang(v); };
+  useEffect(() => { startTranslator(); }, []);
   const profile = viewAs ? { ...realProfile, role: viewAs, hq_role: null, hq_access: 'edit' } : realProfile;
   const [studio, setStudio] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === '1'; } catch { return false; } });
   const [side, setSideState] = useState(() => { const d = realProfile.role === 'admin' ? 'hq' : 'center'; try { return localStorage.getItem(SIDE_KEY) || d; } catch { return d; } });
@@ -97,6 +103,8 @@ function Main({ profile: realProfile }) {
   const [centerId, setCenterId] = useState(realProfile.center_id || 1);
   const [R, setR] = useState({ centers: [], people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true, reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: true, lessonTopics: [], r4: true, site: {}, config: DEFAULT_CONFIG });
   const perm = can(profile, { studio, side, config: R.config });
+  const L = (page) => langFor(page, myLang, R.config?.language);   // the language of a page
+  setDownloadLang(L('downloads'));
   const [personId, setPersonId] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
@@ -139,6 +147,7 @@ function Main({ profile: realProfile }) {
         Object.assign(p2, { config: buildConfig(caps, settings), r7: true });
       } catch { Object.assign(p2, { config: DEFAULT_CONFIG, r7: false }); }
       setRoleNames(p2.config.roleNames);
+      setTranslations(p2.config.translations); setTimeout(retranslate, 0);
       try { const rows = await q('site_info'); Object.assign(p2, { site: Object.fromEntries(rows.map((r) => [r.key, r.value])), r5: true }); } catch { Object.assign(p2, { site: {}, r5: false }); }
       setR({
         allCenters: centers.sort((a, b) => (a.sort ?? a.id) - (b.sort ?? b.id) || a.id - b.id), centers: centers.filter((c) => c.active !== false).sort((a, b) => (a.sort ?? a.id) - (b.sort ?? b.id) || a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
@@ -269,7 +278,7 @@ function Main({ profile: realProfile }) {
   const ctx = {
     profile, perm, realProfile, studio, D, idx, latest, today, progBy, personBy, summaries, calInfo, rosterFor,
     saveMark, saveMarks, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek, openExport: (o) => setExporting(o || {}),
-    config: R.config, semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: (k) => goTab({ follow: 'calls', register: 'people', profiles: 'people' }[k] || k),
+    config: R.config, L, myLang, setMyLang, semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: (k) => goTab({ follow: 'calls', register: 'people', profiles: 'people' }[k] || k),
   };
 
   const alerts = useMemo(() => {
@@ -292,12 +301,12 @@ function Main({ profile: realProfile }) {
   const pickViewAs = (r) => { setViewAs(r); setTab('home'); };
 
   if (perm.hqSide) {
-    return <HqApp R={R} today={today} profile={profile} realProfile={realProfile} perm={perm} reload={load} setError={setError} error={error} loading={loading} Logo={Logo}
+    return <HqApp L={L} myLang={myLang} setMyLang={setMyLang} R={R} today={today} profile={profile} realProfile={realProfile} perm={perm} reload={load} setError={setError} error={error} loading={loading} Logo={Logo}
       onCenterSide={perm.both && !viewAs ? () => setSide('center') : null} viewAs={viewAs} setViewAs={pickViewAs} studio={studio} setMode={setMode} />;
   }
 
   return (
-    <div className={`app ${perm.studio ? 'studio' : 'general'}`}>
+    <div className={`app ${perm.studio ? 'studio' : 'general'}`} data-lang={L('menu')}>
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
@@ -364,7 +373,7 @@ function Main({ profile: realProfile }) {
           </div>
         </div>
       )}
-      <main>
+      <main data-lang={L(tab2)}>
         {error && <div className="banner err" style={{ marginBottom: 12 }}>{error} <button className="link small" onClick={() => setError('')}>Dismiss</button></div>}
         {loading ? <div className="center muted">Loading Gaius {D.center?.name || ''}…</div> : (
           <>
@@ -395,6 +404,7 @@ function Main({ profile: realProfile }) {
       {menu && (
         <Sheet title="Account" onClose={() => setMenu(false)}>
           <AccountPanel profile={realProfile} perm={perm} studio={studio} setMode={setMode} onExport={perm.download ? () => { setMenu(false); setExporting({}); } : null} go={(k) => { setMenu(false); goTab(k); }} />
+          <MyLanguage myLang={myLang} setMyLang={setMyLang} ministry={R.config?.language} />
         </Sheet>
       )}
     </div>

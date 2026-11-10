@@ -7,12 +7,13 @@ import { toExcel, toPdf, tableText, readSheet, rowsUnder, col, downloadTemplate 
 import { Sheet, Icon } from './common';
 import Grid from './Grid';
 import PlanUploadSheet from './PlanUpload';
+import Performance from './Performance';
 import { recordUpdate } from '../lib/undo';
 
 export default function PlansPage(props) {
   const { D, today, perm } = props;
   const TABS = perm.hqView ? [['dates', 'Planned dates'], ['budget', 'Budget']]
-    : [['plans', 'Plans'], ['budget', 'Budget'], ['request', 'Month-end request'], ...(perm.studio ? [['report', 'Done / not done']] : [])];
+    : [['plans', 'Plans'], ['achievement', 'Achievement'], ['budget', 'Budget'], ['request', 'Month-end request'], ...(perm.studio ? [['report', 'Done / not done']] : [])];
   const [tab0, setTab] = useState(TABS[0][0]);
   const tab = TABS.some(([k]) => k === tab0) ? tab0 : TABS[0][0];
   const [sem, setSem] = useState(semesterOf(today));
@@ -33,6 +34,7 @@ export default function PlansPage(props) {
       {tab === 'budget' && <Budget {...props} sem={sem} />}
       {tab === 'request' && <MonthRequest {...props} sem={sem} />}
       {tab === 'report' && <DoneReport {...props} sem={sem} />}
+      {tab === 'achievement' && <Performance {...props} embedded />}
       {!perm.mark && <p className="muted tiny">You can view plans; leaders can update them.</p>}
       {D.plans.length === 0 && D.r2 && <div className="card empty">No plans yet for this center.</div>}
     </div>
@@ -40,7 +42,7 @@ export default function PlansPage(props) {
 }
 
 /* ── Plans by department ─────────────────────────────────────────── */
-function PlanList({ D, today, perm, reload, setError, sem, go, config }) {
+function PlanList({ D, today, perm, reload, setError, sem, go, config, L }) {
   const [open, setOpen] = useState(null);
   const [item, setItem] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -121,7 +123,7 @@ function PlanList({ D, today, perm, reload, setError, sem, go, config }) {
       {open && <PlanSheet plan={open} D={D} today={today} perm={perm} onClose={() => setOpen(null)} onItem={(i) => setItem(i)} reload={reload} setError={setError} />}
       {item && <ItemSheet item={item} D={D} perm={perm} onClose={() => setItem(null)} reload={reload} setError={setError} />}
       {adding && <NewPlanSheet D={D} sem={sem} onClose={() => setAdding(false)} reload={reload} setError={setError} />}
-      {importing && <PlanUploadSheet D={D} sem={sem} onClose={() => setImporting(false)} reload={reload} setError={setError} go={go} config={config} />}
+      {importing && <PlanUploadSheet D={D} sem={sem} onClose={() => setImporting(false)} reload={reload} setError={setError} go={go} config={config} tlang={L ? L('templates') : 'both'} />}
     </>
   );
 }

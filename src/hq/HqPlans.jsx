@@ -8,6 +8,7 @@ import Grid from '../views/Grid';
 import { Icon, Sheet } from '../views/common';
 import { agenda, colorOf } from './hqData';
 import { HqUploadSheet } from '../views/PlanUpload';
+import HqPerformance from './HqPerformance';
 import { semesterOf } from '../lib/ethiopian';
 import { CenterTag } from './HqOverview';
 
@@ -17,7 +18,7 @@ const ACT_STATUS = [['planned', 'Planned'], ['in_progress', 'In progress'], ['do
 /* HQ plans: HQ's own plans & activities, HQ events, one calendar of every center's planned dates, and the teaching plan */
 export default function HqPlans({ R, C, today, perm, reload, setError }) {
   const [tab, setTab] = useState('mine');
-  const TABS = [['mine', 'HQ plans & activities'], ['calendar', 'Calendar · all centers'], ['events', 'HQ events'], ['teaching', 'Teaching plan']];
+  const TABS = [['mine', 'HQ plans & activities'], ['performance', 'Performance'], ['calendar', 'Calendar · all centers'], ['events', 'HQ events'], ['teaching', 'Teaching plan']];
   return (
     <div className="page hq-page">
       <div className="page-head">
@@ -25,6 +26,7 @@ export default function HqPlans({ R, C, today, perm, reload, setError }) {
       </div>
       <div className="seg wrap" role="tablist">{TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       {tab === 'mine' && <Activities R={R} today={today} perm={perm} reload={reload} setError={setError} />}
+      {tab === 'performance' && <HqPerformance R={R} C={C} today={today} />}
       {tab === 'calendar' && <AllCalendar R={R} today={today} />}
       {tab === 'events' && <HqEvents R={R} today={today} perm={perm} reload={reload} setError={setError} />}
       {tab === 'teaching' && <Teaching R={R} C={C} today={today} perm={perm} reload={reload} setError={setError} />}

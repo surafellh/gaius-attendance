@@ -462,7 +462,7 @@ function Compare({ idx, summaries, D, hq, today, style }) {
   ];
   return (
     <section className="card span2" style={style}>
-      <div className="card-head"><div><div className="card-title">{monthLabel(A)} compared with {monthLabel(B)}</div>
+      <div className="card-head"><div><div className="card-title">Month to month · {monthLabel(A)} / {monthLabel(B)}</div>
         <div className="card-sub">Averages per Sunday. Pick another month to compare it with the month before.</div></div>
         <select className="small-select" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Month to compare">
           {months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}

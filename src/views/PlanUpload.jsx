@@ -7,22 +7,34 @@ import { readSheet, rowsUnder, col } from '../lib/exports';
 import { Sheet, Icon } from './common';
 
 /* the semester plan template: English and Amharic headings, so a plan typed in either language uploads */
-const HEAD = ['Department / ክፍል', 'Activity / ተግባር', 'Details / ዝርዝር', 'When / መቼ', 'Dates or months / ቀን ወይም ወር', 'Budget / በጀት', 'Budget detail / የበጀት ዝርዝር', 'Responsible / ኃላፊ', 'Prepared by / ያዘጋጀው'];
+const HEAD_EN = ['Department', 'Activity', 'Details', 'When', 'Dates or months', 'Budget', 'Budget detail', 'Responsible', 'Prepared by'];
+const HEAD_AM = ['ክፍል', 'ተግባር', 'ዝርዝር', 'መቼ', 'ቀን ወይም ወር', 'በጀት', 'የበጀት ዝርዝር', 'ኃላፊ', 'ያዘጋጀው'];
+const heads = (en, am, lang) => (lang === 'en' ? en : lang === 'am' ? am : en.map((h, i) => `${h} / ${am[i]}`));
 const WHEN = [['On dates', 'በቀን', 'day'], ['Every week', 'በየሳምንቱ', 'week'], ['In months', 'በወር', 'month'], ['Any time', 'በማንኛውም ጊዜ', 'period']];
 const semMonths = (sem) => (semNo(sem) === 1 ? [0, 1, 2, 3, 4, 5] : [6, 7, 8, 9, 10, 11, 12]);
 
-export async function semesterTemplate(D, sem, centerName) {
+export async function semesterTemplate(D, sem, centerName, lang = 'both') {
+  const pickL = (en, am) => (lang === 'en' ? en : lang === 'am' ? am : `${en} / ${am}`);
   const XLSX = await import('xlsx');
   const d0 = D.departments[0], d1 = D.departments[1] || d0;
   const m = semMonths(sem);
-  const rows = [
+  const amRows = [
     [d0?.name_am || d0?.name || 'ክትትል', 'የአባላት ጥሪ ቀን – ምሳሌ (ይህን መስመር ያጥፉ)', 'ሁሉንም አባላት መጋበዝ', 'በቀን', `${ET_MONTHS_AM[m[1]]} 15, ${ET_MONTHS_AM[m[3]]} 20`, 1500, 'ትራንስፖርት እና መክሰስ', 'ክትትል ክፍል', ''],
-    [d1?.name || 'Follow-up', 'Example – leaders prayer (delete this row)', 'Every Saturday morning', 'Every week', `${ET_MONTHS[m[0]]} 6`, '', '', 'Coordinator', ''],
-    [d0?.name || 'Follow-up', 'Example – monthly teaching (delete this row)', '', 'In months', `${ET_MONTHS[m[1]]}, ${ET_MONTHS_AM[m[2]]}`, 3000, 'Hall rent', '', ''],
+    [d1?.name_am || d1?.name || 'ክትትል', 'የመሪዎች ጸሎት – ምሳሌ (ይህን መስመር ያጥፉ)', 'በየቅዳሜው ጠዋት', 'በየሳምንቱ', `${ET_MONTHS_AM[m[0]]} 6`, '', '', 'አገልግሎት አስተባባሪ', ''],
+    [d0?.name_am || d0?.name || 'ክትትል', 'ወርሃዊ ትምህርት – ምሳሌ (ይህን መስመር ያጥፉ)', '', 'በወር', `${ET_MONTHS_AM[m[1]]}, ${ET_MONTHS_AM[m[2]]}`, 3000, 'የአዳራሽ ኪራይ', '', ''],
   ];
-  const ws = XLSX.utils.aoa_to_sheet([[`Gaius ${centerName || ''} · semester plan · ${semName(sem)} · ${etLabel(semesterStart(sem), true)} – ${etLabel(semesterEnd(sem), true)} · one activity per row / በአንድ መስመር አንድ ተግባር`], HEAD, ...rows]);
+  const enRows = [
+    [d0?.name || 'Follow-up', 'Example – members call day (delete this row)', 'Invite every member', 'On dates', `${ET_MONTHS[m[1]]} 15, ${ET_MONTHS[m[3]]} 20`, 1500, 'Transport and snacks', 'Follow-up dept.', ''],
+    [d1?.name || 'Follow-up', 'Example – leaders prayer (delete this row)', 'Every Saturday morning', 'Every week', `${ET_MONTHS[m[0]]} 6`, '', '', 'Coordinator', ''],
+    [d0?.name || 'Follow-up', 'Example – monthly teaching (delete this row)', '', 'In months', `${ET_MONTHS[m[1]]}, ${ET_MONTHS[m[2]]}`, 3000, 'Hall rent', '', ''],
+  ];
+  const rows = lang === 'am' ? amRows : lang === 'en' ? enRows : [amRows[0], enRows[1], enRows[2]];
+  const title = lang === 'am' ? `ጋይዮስ ${D.center?.name_am || centerName || ''} · የሴሚስተር ዕቅድ · ${semName(sem)} · በአንድ መስመር አንድ ተግባር`
+    : lang === 'en' ? `Gaius ${centerName || ''} · semester plan · ${semName(sem)} · ${etLabel(semesterStart(sem), true)} – ${etLabel(semesterEnd(sem), true)} · one activity per row`
+      : `Gaius ${centerName || ''} · semester plan · ${semName(sem)} · ${etLabel(semesterStart(sem), true)} – ${etLabel(semesterEnd(sem), true)} · one activity per row / በአንድ መስመር አንድ ተግባር`;
+  const ws = XLSX.utils.aoa_to_sheet([[title], heads(HEAD_EN, HEAD_AM, lang), ...rows]);
   ws['!cols'] = [20, 38, 30, 16, 32, 12, 24, 18, 16].map((wch) => ({ wch }));
-  const help = XLSX.utils.aoa_to_sheet([
+  const helpRows = [
     ['How to fill the plan', 'ዕቅዱን እንዴት እንደሚሞሉ'],
     ['One activity per row, under the headings on the “Plan” sheet.', 'በ“ዕቅድ” ገጽ ላይ በአንድ መስመር አንድ ተግባር ይጻፉ።'],
     ['Department: as on the “Lists” sheet (English or Amharic). A new department can be created when you upload.', 'ክፍል፡ በ“ዝርዝሮች” ገጽ እንዳለው (በእንግሊዝኛ ወይም በአማርኛ)።'],
@@ -31,18 +43,19 @@ export async function semesterTemplate(D, sem, centerName) {
     ['Months (for “In months”): month names like ኅዳር, ታኅሣሥ or Hidar, Tahsas.', 'ወር፡ ለምሳሌ ኅዳር፣ ታኅሣሥ'],
     ['Every week: the first date; it repeats every week to the end of the semester.', 'በየሳምንቱ፡ የመጀመሪያውን ቀን ይጻፉ – እስከ ሴሚስተሩ መጨረሻ ይደገማል።'],
     ['Budget: the total for the activity, numbers only. It is split over its dates.', 'በጀት፡ የተግባሩ ጠቅላላ በጀት (ቁጥር ብቻ)።'],
-    ['Delete the example rows before uploading. After the upload, plans appear on the calendar and overlapping days are highlighted.', 'ምሳሌዎቹን ያጥፉ። ከተጫነ በኋላ ዕቅዶቹ በቀን መቁጠሪያው ላይ ይታያሉ።'],
-  ]);
-  help['!cols'] = [{ wch: 80 }, { wch: 70 }];
+    ['Delete the example rows before uploading. After the upload, plans appear on the calendar and overlapping days are highlighted.', 'ምሳሌዎቹን ያጥፉ። ከተጫነ በኋላ ዕቅዶቹ በቀን መቁጠሪያው ላይ ይታያሉ፤ የተደራረቡ ቀናትም ይጠቆማሉ።'],
+  ];
+  const help = XLSX.utils.aoa_to_sheet(helpRows.map(([en, am]) => (lang === 'en' ? [en] : lang === 'am' ? [am] : [en, am])));
+  help['!cols'] = lang === 'both' ? [{ wch: 80 }, { wch: 70 }] : [{ wch: 90 }];
   const n = Math.max(D.departments.length, WHEN.length, m.length);
-  const lists = XLSX.utils.aoa_to_sheet([['Departments', 'ክፍሎች', '', 'When', 'መቼ', '', 'Months this semester', 'ወሮች'],
+  const lists = XLSX.utils.aoa_to_sheet([['Departments', 'ክፍሎች', '', 'When', 'መቼ', '', 'Months this semester', 'ወሮች'].map((h, i) => (lang === 'am' && [0, 3, 6].includes(i) ? ['ክፍሎች (English)', '', '', 'መቼ (English)', '', '', 'ወሮች (English)'][i] : h)),
     ...Array.from({ length: n }, (_, i) => [D.departments[i]?.name || '', D.departments[i]?.name_am || '', '', WHEN[i]?.[0] || '', WHEN[i]?.[1] || '', '', m[i] != null ? ET_MONTHS[m[i]] : '', m[i] != null ? ET_MONTHS_AM[m[i]] : ''])]);
   lists['!cols'] = [22, 22, 3, 14, 16, 3, 20, 16].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Plan · ዕቅድ');
-  XLSX.utils.book_append_sheet(wb, help, 'How to fill · አሞላል');
-  XLSX.utils.book_append_sheet(wb, lists, 'Lists · ዝርዝሮች');
-  XLSX.writeFile(wb, `Gaius_${centerName || 'center'}_semester_plan_${semName(sem).replace(/\W+/g, '_')}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, pickL('Plan', 'ዕቅድ'));
+  XLSX.utils.book_append_sheet(wb, help, pickL('How to fill', 'አሞላል'));
+  XLSX.utils.book_append_sheet(wb, lists, pickL('Lists', 'ዝርዝሮች'));
+  XLSX.writeFile(wb, `Gaius_${centerName || 'center'}_semester_plan_${semName(sem).replace(/\W+/g, '_')}${lang === 'am' ? '_AM' : lang === 'en' ? '_EN' : ''}.xlsx`);
 }
 
 const norm = (v) => String(v || '').trim().toLowerCase();
@@ -68,7 +81,8 @@ function parseRow(r, sem, D, overlapAt) {
 }
 
 /* upload a filled semester plan: check each row, fix dates in place, create missing departments, see overlaps, then register */
-export default function PlanUploadSheet({ D, sem: sem0, onClose, reload, setError, go, config }) {
+export default function PlanUploadSheet({ D, sem: sem0, onClose, reload, setError, go, config, tlang = 'both' }) {
+  const [tl, setTl] = useState(tlang);
   const [no, setNo] = useState(semNo(sem0));
   const [year, setYear] = useState(semYear(sem0));
   const sem = semKey(no, Number(year) || semYear(sem0));
@@ -144,7 +158,8 @@ export default function PlanUploadSheet({ D, sem: sem0, onClose, reload, setErro
         </div>
         <p className="small muted" style={{ margin: 0 }}>{semName(sem)}: {etLabel(semesterStart(sem), true)} – {etLabel(semesterEnd(sem), true)}. 1. Download the template (English and Amharic). 2. Fill it – Amharic is fine. 3. Upload it, check the rows, register.</p>
         <div className="import-box">
-          <button type="button" className="btn ghost" onClick={() => semesterTemplate(D, sem, D.center?.name)}><Icon.download width="18" height="18" /> Download the template</button>
+          <span className="seg" data-notr>{[['en', 'English'], ['am', 'አማርኛ'], ['both', 'Both']].map(([k, l]) => <button key={k} type="button" className={tl === k ? 'on' : ''} onClick={() => setTl(k)}>{l}</button>)}</span>
+          <button type="button" className="btn ghost" onClick={() => semesterTemplate(D, sem, D.center?.name, tl)}><Icon.download width="18" height="18" /> Download the template</button>
           <label className="btn lime file-btn"><Icon.upload width="18" height="18" /> Upload the filled plan<input type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && readFile(e.target.files[0])} /></label>
         </div>
         {done?.finished ? (
@@ -207,11 +222,12 @@ async function createPlanFrom(D, sem, r, cid) {
 }
 
 /* ── HQ: its own semester plan (activities for all centers or one center) ───────────────────── */
-const HQ_HEAD = ['Activity / ተግባር', 'Kind / ዓይነት', 'For (center or All) / ለማን', 'Responsible / ኃላፊ', 'Starts / ይጀምራል', 'Due / ያልቃል', 'Budget / በጀት', 'Notes / ማስታወሻ'];
-export async function hqTemplate(R, sem, kinds) {
+const HQ_EN = ['Activity', 'Kind', 'For (center or All)', 'Responsible', 'Starts', 'Due', 'Budget', 'Notes'];
+const HQ_AM = ['ተግባር', 'ዓይነት', 'ለማን (ማዕከል ወይም ሁሉም)', 'ኃላፊ', 'ይጀምራል', 'ያልቃል', 'በጀት', 'ማስታወሻ'];
+export async function hqTemplate(R, sem, kinds, lang = 'both') {
   const XLSX = await import('xlsx');
   const m = semMonths(sem);
-  const ws = XLSX.utils.aoa_to_sheet([[`Gaius HQ · semester plan · ${semName(sem)} · one activity per row / በአንድ መስመር አንድ ተግባር · Dates like ጥቅምት 15 or Tikimt 15`], HQ_HEAD,
+  const ws = XLSX.utils.aoa_to_sheet([[`Gaius HQ · semester plan · ${semName(sem)} · one activity per row / በአንድ መስመር አንድ ተግባር · Dates like ጥቅምት 15 or Tikimt 15`], heads(HQ_EN, HQ_AM, lang),
     ['የመሪዎች ስልጠና – ምሳሌ (ይህን መስመር ያጥፉ)', kinds[2] || 'Training', 'All', 'Director', `${ET_MONTHS_AM[m[1]]} 15`, `${ET_MONTHS_AM[m[1]]} 16`, 5000, ''],
     [`Example – visit ${R.centers[0]?.name || 'a center'} (delete this row)`, kinds[1] || 'Center visit', R.centers[0]?.name || '', 'HQ Follow-up', `${ET_MONTHS[m[2]]} 8`, '', '', '']]);
   ws['!cols'] = [40, 16, 20, 18, 16, 16, 12, 28].map((wch) => ({ wch }));
@@ -221,7 +237,8 @@ export async function hqTemplate(R, sem, kinds) {
   XLSX.utils.book_append_sheet(wb, lists, 'Lists · ዝርዝሮች');
   XLSX.writeFile(wb, `Gaius_HQ_semester_plan_${semName(sem).replace(/\W+/g, '_')}.xlsx`);
 }
-export function HqUploadSheet({ R, sem, onClose, reload, setError, kinds }) {
+export function HqUploadSheet({ R, sem, onClose, reload, setError, kinds, tlang = 'both' }) {
+  const [tl, setTl] = useState(tlang);
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
@@ -230,7 +247,7 @@ export function HqUploadSheet({ R, sem, onClose, reload, setError, kinds }) {
   async function readFile(file) {
     try {
       const { head, rows: list } = rowsUnder(await readSheet(file), ['activity', 'ተግባር']);
-      const c = { a: col(head, 'activity', 'ተግባር'), k: col(head, 'kind', 'ዓይነት'), f: col(head, 'for', 'ለማን'), r: col(head, 'responsible', 'ኃላፊ'), s: col(head, 'starts', 'start', 'ይጀምራል'), d: col(head, 'due', 'end', 'ያልቃል'), b: col(head, 'budget', 'በጀት'), n: col(head, 'notes', 'ማስታወሻ') };
+      const c = { a: col(head, 'activity', 'ተግባር'), k: col(head, 'kind', 'ዓይነት'), f: col(head, 'for', 'ለማን', 'ለ'), r: col(head, 'responsible', 'ኃላፊ'), s: col(head, 'starts', 'start', 'ይጀምራል'), d: col(head, 'due', 'end', 'ያልቃል'), b: col(head, 'budget', 'በጀት'), n: col(head, 'notes', 'ማስታወሻ') };
       if (c.a < 0) return setError('The sheet needs an “Activity / ተግባር” column – use the template.');
       setRows(list.map(({ line, cells }) => {
         const get = (i) => (i >= 0 ? cells[i] : '');
@@ -259,7 +276,8 @@ export function HqUploadSheet({ R, sem, onClose, reload, setError, kinds }) {
       <div className="form">
         <p className="small muted" style={{ margin: 0 }}>{semName(sem)}. Download the template, fill it in English or Amharic, upload it, check the rows and register. The plans go straight onto the HQ calendar.</p>
         <div className="import-box">
-          <button className="btn ghost" onClick={() => hqTemplate(R, sem, kinds)}><Icon.download width="18" height="18" /> Download the template</button>
+          <span className="seg" data-notr>{[['en', 'English'], ['am', 'አማርኛ'], ['both', 'Both']].map(([k, l]) => <button key={k} type="button" className={tl === k ? 'on' : ''} onClick={() => setTl(k)}>{l}</button>)}</span>
+          <button className="btn ghost" onClick={() => hqTemplate(R, sem, kinds, tl)}><Icon.download width="18" height="18" /> Download the template</button>
           <label className="btn lime file-btn"><Icon.upload width="18" height="18" /> Upload the filled plan<input type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && readFile(e.target.files[0])} /></label>
         </div>
         {done != null ? <div className="banner ok"><b>{done} HQ plan{done === 1 ? '' : 's'} registered.</b> <button className="btn ghost small" onClick={onClose}>Close</button></div> : rows && <>

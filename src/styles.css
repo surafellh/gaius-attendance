@@ -1121,3 +1121,21 @@ p.pad { padding-bottom: 12px; }
 .card-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
 .card-nav { display: flex; align-items: center; gap: 4px; margin: -4px 0 10px; }
 .card-nav .btn.small { min-width: 120px; }
+/* plan achievement */
+.perf { display: flex; flex-direction: column; gap: 14px; }
+.perf-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--line-2); min-width: 100px; }
+.perf-bar i { display: block; min-width: 0; }
+.perf-bar .ontime, .sw.ontime { background: var(--present); }
+.perf-bar .late, .sw.late { background: #8bc34a; }
+.perf-bar .notdone, .sw.notdone { background: var(--absent); }
+.perf-bar .upcoming, .sw.upcoming { background: #cfd8c8; }
+.sw { display: inline-block; width: 12px; height: 8px; border-radius: 3px; }
+.score { font-variant-numeric: tabular-nums; }
+.score.good { color: #1c8a47; } .score.mid { color: var(--warn); } .score.low { color: var(--absent); }
+.perf-table td, .perf-table th { padding-left: 10px; padding-right: 10px; }
+.perf-table .rank-pos { display: inline-block; width: 18px; color: var(--muted); font-size: .75rem; }
+.perf-items td { background: var(--surface-2, #f7f9f4); }
+.perf-items ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; font-size: .82rem; }
+.res { font-size: .68rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: var(--line-2); }
+.res.ontime { background: var(--lime-soft); color: #1c6b39; } .res.late { background: #e6f3d3; color: #4d7a17; }
+.res.notdone, .res.overdue { background: var(--absent-soft); color: #7a2418; } .res.postponed { background: var(--warn-soft); color: #6b4705; }

@@ -6,12 +6,13 @@ import { ROLES, roleName } from '../lib/roles';
 import { buildReport } from './ExportSheet';
 import { Icon } from './common';
 import Centers from './CentersAdmin';
+import { MinistryLanguage, Translations } from './LangPicker';
 
 /* Settings (admin): change the app without code – what each role can do, the dashboard, columns, downloads, role names */
 export default function Settings({ R, ctx, reload, setError }) {
   const [tab, setTab] = useState('access');
   const cfg = R.config;
-  const TABS = [['access', 'Roles & access'], ['centers', 'Centers'], ['dashboard', 'Dashboard'], ['people', 'People columns'], ['downloads', 'Downloads'], ['names', 'Role names'], ['other', 'Calendar, finance & lists']];
+  const TABS = [['access', 'Roles & access'], ['centers', 'Centers'], ['dashboard', 'Dashboard'], ['people', 'People columns'], ['downloads', 'Downloads'], ['names', 'Role names'], ['other', 'Calendar, finance & lists'], ['language', 'Language · ቋንቋ']];
   if (!cfg.fromDb) return <div className="banner err">Settings are saved in the database, so they need the SQL file <b>run_v8_to_v11.sql</b> to be run in Supabase once (SQL Editor → paste → Run). Until then the app uses its built-in rules.</div>;
 
   async function save(key, value, label) {
@@ -37,6 +38,7 @@ export default function Settings({ R, ctx, reload, setError }) {
       {tab === 'downloads' && <Downloads {...props} />}
       {tab === 'names' && <Names {...props} />}
       {tab === 'other' && <Other {...props} />}
+      {tab === 'language' && <><MinistryLanguage value={cfg.language} save={save} /><div style={{ height: 12 }} /><Translations value={cfg.translations} save={save} /></>}
       <p className="tiny muted" style={{ marginTop: 10 }}>Every change saves at once and applies to everyone the next time their app loads. Undo (top bar) reverses a change.</p>
     </div>
   );

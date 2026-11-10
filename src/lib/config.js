@@ -106,6 +106,8 @@ export function buildConfig(capRows, settings = {}) {
     calendar: { overlap: 2, ...(settings.calendar || {}) },
     finance: { inCats: DEFAULT_IN_CATS, outCats: DEFAULT_OUT_CATS, ...(settings.finance || {}) },
     lists: { pageSize: 40, top: 10, ...(settings.lists || {}) },
+    language: settings.language || null,
+    translations: settings.translations || {},
   };
 }
 export const DEFAULT_CONFIG = buildConfig(null);

@@ -3,6 +3,7 @@ import { monthOf, monthLabel, semesterOf, SEMESTERS, semesterStart, semesterEnd,
 import { monthlyReport, semesterReport, profilesReport, programReport, tableText, toExcel, toPdf, REPORT_CATS, PROFILE_TABLES } from '../lib/exports';
 import { attendanceHistory, callsHistory, changesHistory, roadmapReport, eventsHistory, meetingsHistory, financeHistory, everything } from '../lib/history';
 import { Sheet, Icon } from './common';
+import { trReport } from '../lib/i18n';
 import { planReport, plansList } from './Plans';
 import { teachingReport } from './TeachingPlan';
 
@@ -49,6 +50,7 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
   const P = usePeriod(ctx, initial);
   const [kind, setKind] = useState(initial.kind || 'month');
   const [busy, setBusy] = useState(false);
+  const [lang, setLang] = useState(() => ctx.L?.('downloads') || 'en');
   const [copied, setCopied] = useState('');
   const [cats, setCats] = useState(() => REPORT_CATS.map(([k]) => k));
   const [tables, setTables] = useState(() => PROFILE_TABLES.map(([k]) => k));
@@ -107,12 +109,14 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
         </fieldset>}
         {kind === 'profiles' && <p className="small muted" style={{ margin: 0 }}>Includes phone numbers – share it only with the leaders and HQ.</p>}
         {kind === 'everything' && <p className="small muted" style={{ margin: 0 }}>One workbook, one tab per table. For a long period the PDF can be very long – Excel is better.</p>}
+        <div className="row" data-notr style={{ gap: 8 }}><span className="small muted">File language</span>
+          <div className="seg"><button type="button" className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>English</button><button type="button" className={lang === 'am' ? 'on' : ''} onClick={() => setLang('am')}>አማርኛ</button></div></div>
         <div className="row2">
-          <button type="button" className="btn lime" disabled={busy || !chosen.length || !meta} onClick={async () => { setBusy(true); try { await toExcel(build()); } finally { setBusy(false); } }}><Icon.grid width="18" height="18" /> Excel</button>
-          <button type="button" className="btn ghost" disabled={!chosen.length} onClick={() => toPdf(build())}><Icon.book width="18" height="18" /> PDF</button>
+          <button type="button" className="btn lime" disabled={busy || !chosen.length || !meta} onClick={async () => { setBusy(true); try { await toExcel(build(), lang); } finally { setBusy(false); } }}><Icon.grid width="18" height="18" /> Excel</button>
+          <button type="button" className="btn ghost" disabled={!chosen.length} onClick={() => toPdf(build(), lang)}><Icon.book width="18" height="18" /> PDF</button>
         </div>
         <button type="button" className="btn ghost" disabled={!chosen.length} onClick={async () => {
-          const rep = build(); const sh = rep.sheets[0];
+          const rep = trReport(build(), lang); const sh = rep.sheets[0];
           try { await navigator.clipboard.writeText(tableText(sh)); setCopied(`Copied “${sh.name}” – paste it into Excel, Sheets or Telegram.`); } catch { setCopied('Copy was blocked by the browser – use the PDF page’s Copy table button.'); }
         }}><Icon.copy width="18" height="18" /> Copy table</button>
         {copied && <p className="banner ok" style={{ margin: 0 }}>{copied}</p>}

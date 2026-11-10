@@ -8,6 +8,7 @@ import PersonSheet from '../views/Person';
 import Messages from '../views/Messages';
 import AccountPanel from '../views/Account';
 import Admin from '../views/Admin';
+import { MyLanguage } from '../views/LangPicker';
 import HqOverview from './HqOverview';
 import HqAttendance from './HqAttendance';
 import HqPeople from './HqPeople';
@@ -19,7 +20,7 @@ const NAV = [['overview', 'Overview', Icon.home], ['attendance', 'Attendance', I
 
 /* The HQ side: its own app. Every center at once – no switching – plus HQ's own plans and activities.
    HQ-only accounts always land here; accounts with a center role and an HQ role (and the admin) switch sides. */
-export default function HqApp({ R, today, profile, realProfile, perm, reload, setError, error, loading, Logo, onCenterSide, viewAs, setViewAs, studio, setMode }) {
+export default function HqApp({ L = () => 'en', myLang, setMyLang, R, today, profile, realProfile, perm, reload, setError, error, loading, Logo, onCenterSide, viewAs, setViewAs, studio, setMode }) {
   const [tab, setTab] = useState('overview');
   const [centerOpen, setCenterOpen] = useState(null);
   const [person, setPerson] = useState(null);          // { cid, id }
@@ -37,7 +38,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
   const upcoming = useMemo(() => agenda(RF, today, addDays(today, 30)), [RF, today]);
   const hqPerm = { ...perm, hqView: true, switchCenter: true, studio: false };
   const nav = NAV.filter(([k]) => k !== 'finance' || perm.finance);
-  const adminCtx = C[0] ? { ...C[0], perm, profile, reload, setError, config: R.config, today, semStart: today } : null;
+  const adminCtx = C[0] ? { ...C[0], perm, profile, reload, setError, config: R.config, today, semStart: today, L } : null;
   const flash = (t) => { setToast(t); setTimeout(() => setToast(''), 2200); };
   const doUndo = async (fn, w) => { try { const l = await fn(); if (l) flash(`${w}: ${l}`); } catch (e) { setError(`Couldn’t ${w.toLowerCase()}: ${e.message}`); } };
   const go = (k) => { setTab(k); setCenterOpen(null); window.scrollTo(0, 0); };
@@ -50,7 +51,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
   const common = { R: RF, C, today, perm: hqPerm, reload, setError, period, setPeriod, openCenter, openPerson, go };
 
   return (
-    <div className="app hq">
+    <div className="app hq" data-lang={L('menu')}>
       <header className="hq-top">
         <div className="hq-top-inner">
           <button className="hq-brand" onClick={() => go('overview')}>
@@ -94,7 +95,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
           {live.length > 0 && <span className="tiny muted">{live.length} of {R.centers.length} · tap more to compare</span>}
         </div>
       )}
-      <main>
+      <main data-lang={centerOpen ? L('home') : tab === 'users' ? L('users') : L(`hq-${tab}`)}>
         {error && <div className="banner err" style={{ marginBottom: 12 }}>{error} <button className="link small" onClick={() => setError('')}>Dismiss</button></div>}
         {loading ? <div className="center muted">Loading every center…</div> : centerOpen ? (
           <CenterReport x={C.find((y) => y.c.id === centerOpen)} R={R} C={C} today={today} perm={hqPerm} week={week} setWeek={setWeek} openCenter={openCenter} openPerson={openPerson} back={() => setCenterOpen(null)} go={go} />
@@ -116,6 +117,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
       {menu && (
         <Sheet title="Account" onClose={() => setMenu(false)}>
           <AccountPanel profile={realProfile} perm={{ ...perm, canStudio: false }} studio={studio} setMode={setMode} hq go={(k) => { setMenu(false); go(k === 'users' ? 'users' : 'overview'); }} onExport={() => setMenu(false)} />
+          {myLang && <MyLanguage myLang={myLang} setMyLang={setMyLang} ministry={R.config?.language} hq />}
           {onCenterSide && <button className="btn ghost wide" style={{ marginTop: 10 }} onClick={() => { setMenu(false); onCenterSide(); }}><Icon.layers width="18" height="18" /> Switch to the center side</button>}
         </Sheet>
       )}

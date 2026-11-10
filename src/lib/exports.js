@@ -2,6 +2,7 @@
 // Reports show what leaders need – the data in the app is more complete than any report.
 import { etLabel, fmtGreg, sundaysOfMonth, monthLabel, sundaysOf, semesterStart, semesterEnd, toEthiopian, ET_MONTHS, shortEt, semName } from './ethiopian';
 import { pct, readiness } from './stats';
+import { trReport } from './i18n';
 
 /* report groups, in order; "active" comes from that Sunday's snapshot */
 export const REPORT_CATS = [
@@ -166,7 +167,12 @@ export function profilesReport(ctx, keys) {
 }
 
 /* ── writers ───────────────────────────────────────────────────── */
-export async function toExcel(rep) {
+/* the language of downloaded files (Account / Settings → Language → Downloads) */
+let DL = 'en';
+export const setDownloadLang = (l) => { DL = l || 'en'; };
+export const downloadLang = () => DL;
+export async function toExcel(rep0, lang) {
+  const rep = trReport(rep0, lang || DL);
   const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
   for (const sh of rep.sheets) {
@@ -185,7 +191,8 @@ export async function toExcel(rep) {
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 /* Opens a print-ready page; the phone or computer's print dialog saves it as PDF (keeps Amharic text intact). */
-export function toPdf(rep) {
+export function toPdf(rep0, lang) {
+  const rep = trReport(rep0, lang || DL);
   const w = window.open('', '_blank');
   if (!w) { alert('Allow pop-ups for this site to save the PDF.'); return; }
   const wide = rep.sheets.some((sh) => sh.head.length > 9);
