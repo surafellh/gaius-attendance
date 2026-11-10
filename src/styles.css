@@ -1048,3 +1048,14 @@ p.pad { padding-bottom: 12px; }
 .period-seg button { padding-left: 10px; padding-right: 10px; }
 .small-select.dim { opacity: .55; }
 .gtable.compare td:first-child { white-space: normal; }
+
+/* ── release 7: settings ─────────────────────────────────────────── */
+.settings > .card + .card, .settings > section + section { margin-top: 12px; }
+.settings-grid th { text-align: center; font-size: .72rem; white-space: normal; min-width: 78px; }
+.settings-grid th:first-child { text-align: left; }
+.settings-grid td:first-child { white-space: normal; min-width: 260px; }
+.settings-grid input[type=checkbox], .order-list input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--lime-strong); }
+.order-list .icon-btn.sm { width: 28px; height: 28px; }
+.order-list td, .order-list th { padding: 6px 10px; }
+.col-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2, #f7f9f4); min-width: 280px; }
+.chipbtn.tiny-chip { font-size: .7rem; padding: 3px 8px; }

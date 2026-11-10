@@ -31,7 +31,7 @@ const COLS = [
   ['stay', 'Time with us', 110, 'stay'], ['responsible', 'Responsible', 160, 'resp'], ['notes', 'Notes', 220, 'notes'],
 ];
 
-export default function People({ D, idx, latest, perm, openPerson, createRoll, reload, setError, personBy }) {
+export default function People({ D, idx, latest, perm, openPerson, createRoll, reload, setError, personBy, config }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('All');
   const [showLeft, setShowLeft] = useState(false);
@@ -44,7 +44,11 @@ export default function People({ D, idx, latest, perm, openPerson, createRoll, r
   const leaders = D.people.filter((p) => ['Leader', 'Senior Leader'].includes(p.category) && !p.archived);
   const hq = perm.hqView; // HQ sees leaders, members and informal members
   const filters = FILTERS.filter(([k]) => !hq || !['New Comer'].includes(k));
-  const cols = COLS.filter(([k]) => (perm.studio || SIMPLE.includes(k)) && !(hq && k === 'invited_by'));
+  // which columns, in which order: the Settings page (People columns), else the built-in Simple set
+  const cols = config?.people
+    ? config.people.filter((c) => (perm.studio ? c.studio : c.simple)).map((c) => COLS.find(([k]) => k === c.key)).filter(Boolean)
+      .filter(([k]) => !(hq && k === 'invited_by') && (k !== 'phone' || perm.profiles))
+    : COLS.filter(([k]) => (perm.studio || SIMPLE.includes(k)) && !(hq && k === 'invited_by'));
   const test0 = FILTERS.find((f) => f[0] === filter)[2];
   const test = (p) => test0(p) && (!hq || p.category !== 'New Comer');
   const list = useMemo(() => D.people

@@ -18,6 +18,7 @@ export const Icon = {
   left: I(<path d="M15 5l-7 7 7 7" />),
   right: I(<path d="M9 5l7 7-7 7" />),
   down: I(<path d="M6 9l6 6 6-6" />),
+  up: I(<path d="M6 15l6-6 6 6" />),
   search: I(<><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></>),
   phone: I(<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2" />),
   plus: I(<path d="M12 5v14M5 12h14" />),

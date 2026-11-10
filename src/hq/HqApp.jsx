@@ -7,8 +7,7 @@ import Dashboard from '../views/Dashboard';
 import PersonSheet from '../views/Person';
 import Messages from '../views/Messages';
 import AccountPanel from '../views/Account';
-import Users from '../views/Users';
-import Backup from '../views/Backup';
+import Admin from '../views/Admin';
 import HqOverview from './HqOverview';
 import HqAttendance from './HqAttendance';
 import HqPeople from './HqPeople';
@@ -19,7 +18,7 @@ import { allCenters, agenda, colorOf } from './hqData';
 const NAV = [['overview', 'Overview', Icon.home], ['attendance', 'Attendance', Icon.check], ['people', 'People', Icon.people], ['plans', 'Plans', Icon.cal], ['finance', 'Finance', Icon.card], ['messages', 'Messages', Icon.mail]];
 
 /* The HQ side: its own app. Every center at once – no switching – plus HQ's own plans and activities.
-   Founder, Director, HQ Follow-up and HQ staff always land here; the admin can switch between the two sides. */
+   HQ-only accounts always land here; accounts with a center role and an HQ role (and the admin) switch sides. */
 export default function HqApp({ R, today, profile, realProfile, perm, reload, setError, error, loading, Logo, onCenterSide, viewAs, setViewAs, studio, setMode }) {
   const [tab, setTab] = useState('overview');
   const [centerOpen, setCenterOpen] = useState(null);
@@ -32,6 +31,8 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
   const C = useMemo(() => allCenters(R, today), [R, today]);
   const upcoming = useMemo(() => agenda(R, today, addDays(today, 30)), [R, today]);
   const hqPerm = { ...perm, hqView: true, switchCenter: true, studio: false };
+  const nav = NAV.filter(([k]) => k !== 'finance' || perm.finance);
+  const adminCtx = C[0] ? { ...C[0], perm, profile, reload, setError, config: R.config, today, semStart: today } : null;
   const flash = (t) => { setToast(t); setTimeout(() => setToast(''), 2200); };
   const doUndo = async (fn, w) => { try { const l = await fn(); if (l) flash(`${w}: ${l}`); } catch (e) { setError(`Couldn’t ${w.toLowerCase()}: ${e.message}`); } };
   const go = (k) => { setTab(k); setCenterOpen(null); window.scrollTo(0, 0); };
@@ -49,10 +50,10 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
         <div className="hq-top-inner">
           <button className="hq-brand" onClick={() => go('overview')}>
             <Logo site={R.site} size={34} />
-            <span><span className="hq-name">Gaius <b>HQ</b></span><span className="hq-sub">{profile.title && !viewAs ? profile.title : roleName(profile.role)} · all centers</span></span>
+            <span><span className="hq-name">Gaius <b>HQ</b></span><span className="hq-sub">{profile.title && !viewAs ? profile.title : roleName(perm.hqRole || profile.role)} · all centers</span></span>
           </button>
           <nav className="hq-menu" aria-label="HQ sections">
-            {NAV.map(([k, l, Ico]) => (
+            {nav.map(([k, l, Ico]) => (
               <button key={k} className={tab === k && !centerOpen ? 'on' : ''} aria-current={tab === k && !centerOpen ? 'page' : undefined} onClick={() => go(k)}>
                 <Ico />{l}{k === 'messages' && unread ? <span className="badge">{unread}</span> : null}
               </button>
@@ -73,7 +74,7 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
       </header>
       {viewAs && <div className="viewas-bar">Viewing as <b>{roleName(viewAs)}</b>. Changes still use your admin rights. <button className="btn small" onClick={() => setViewAs(null)}>Exit</button></div>}
       <nav className="nav hq-nav" aria-label="HQ sections">
-        {NAV.map(([k, l, Ico]) => (
+        {nav.map(([k, l, Ico]) => (
           <button key={k} className={tab === k && !centerOpen ? 'on' : ''} onClick={() => go(k)}><Ico />{l}{k === 'messages' && unread ? <span className="badge">{unread}</span> : null}</button>
         ))}
       </nav>
@@ -86,12 +87,10 @@ export default function HqApp({ R, today, profile, realProfile, perm, reload, se
           {tab === 'attendance' && <HqAttendance {...common} />}
           {tab === 'people' && <HqPeople {...common} />}
           {tab === 'plans' && <HqPlans {...common} perm={perm} />}
-          {tab === 'finance' && <HqFinance {...common} />}
+          {tab === 'finance' && perm.finance && <HqFinance {...common} />}
           {tab === 'messages' && <HqMessages R={R} C={C} profile={realProfile} perm={hqPerm} reload={reload} setError={setError} unreadOf={unreadOf} />}
-          {tab === 'users' && realProfile.role === 'admin' && <>
-            <Users D={C[0]?.D || { people: [] }} R={R} perm={perm} profile={profile} realProfile={realProfile} viewAs={viewAs} setViewAs={setViewAs} reload={reload} />
-            <Backup D={C[0]?.D || {}} R={R} perm={perm} realProfile={realProfile} reload={reload} setError={setError} />
-          </>}
+          {tab === 'users' && realProfile.role === 'admin' && adminCtx && <Admin ctx={adminCtx} R={R} realProfile={realProfile} viewAs={viewAs} setViewAs={setViewAs} />}
+          {tab === 'finance' && !perm.finance && <p className="muted">Finance is not turned on for your HQ role.</p>}
         </>}
       </main>
       {toast && <div className="toast">{toast}</div>}
@@ -124,7 +123,7 @@ function CenterReport({ x, R, C, today, perm, week, setWeek, openCenter, openPer
         <h1 className="page-title">{c.name} <span className="am muted">{c.name_am}</span></h1>
         <p className="page-sub">{[c.address || c.meeting_place, c.sunday_time && `Sundays ${c.sunday_time}`, c.phone].filter(Boolean).join(' · ') || 'Center report'} · as HQ sees it</p>
       </div>
-      <Dashboard {...x} week={week} setWeek={setWeek} today={today} perm={perm} openPerson={(id) => openPerson(c.id, id)} go={(k) => go(k === 'attendance' || k === 'calls' ? 'attendance' : k === 'calendar' || k === 'meeting' ? 'plans' : 'overview')} />
+      <Dashboard {...x} config={R.config} week={week} setWeek={setWeek} today={today} perm={perm} openPerson={(id) => openPerson(c.id, id)} go={(k) => go(k === 'attendance' || k === 'calls' ? 'attendance' : k === 'calendar' || k === 'meeting' ? 'plans' : 'overview')} />
     </div>
   );
 }

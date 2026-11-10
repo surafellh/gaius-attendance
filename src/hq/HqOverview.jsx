@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, cloneElement } from 'react';
+import { DEFAULT_CONFIG } from '../lib/config';
 import { etLabel, toEthiopian } from '../lib/ethiopian';
 import { pct } from '../lib/stats';
 import { Delta, Meter, Initials, PeriodPicker, periodOf, Icon, MiniDots } from '../views/common';
@@ -41,6 +42,11 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
   const needCall = followed.filter((y) => y.f.lastWeek === 'Present' && y.f.thisWeek === 'Absent');
   const three = followed.filter((y) => y.f.streak >= 3);
 
+  // which cards show, in which order: the Settings page (HQ overview)
+  const cards = (R.config || DEFAULT_CONFIG).hqCards;
+  const on = (k) => cards.find((x) => x.key === k)?.on ?? true;
+  const slot = (k, el) => (on(k) ? cloneElement(el, { style: { ...(el.props.style || {}), order: cards.findIndex((x) => x.key === k) } }) : null);
+
   return (
     <div className="page hq-page">
       <div className="hq-hello">
@@ -50,16 +56,16 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
         </div>
       </div>
 
-      <section className="kpis hq-kpis" aria-label="All centers, last Sunday">
+      {slot('kpis', <section className="kpis hq-kpis" aria-label="All centers, last Sunday">
         <div className="kpi hero"><span className="kpi-label">Total present</span><span className="kpi-val">{sum('present')}</span><span className="kpi-foot"><Delta d={recorded.length ? sum('present') - prevTotal : null} /> vs the Sunday before · all centers</span></div>
         <Kpi label="Leaders" color="var(--c-leader)" v={<>{sum('leaders')}<small>/{sum('leadersTotal')}</small></>} foot={pct(sum('leadersTotal') ? sum('leaders') / sum('leadersTotal') : null) + ' came'} />
         <Kpi label="Members" color="var(--c-member)" v={<>{sum('members')}<small>/{sum('membersTotal')}</small></>} foot={pct(sum('membersTotal') ? sum('members') / sum('membersTotal') : null) + ' came'} />
         <Kpi label="Informal members" color="var(--c-active)" v={sum('informal')} foot="present" />
         <Kpi label="Others" color="var(--c-newcomer)" v={sum('others')} foot="senior leaders & new comers" />
         <Kpi label="First-time comers" color="var(--lime-strong)" v={sum('firstTime')} foot="came for the first time" />
-      </section>
+      </section>)}
 
-      <section className="card flush hq-board">
+      {slot('board', <section className="card flush hq-board">
         <div className="card-head pad"><div><div className="card-title">Every center, last Sunday</div><div className="card-sub">Tap a center for its full report.</div></div>
           <button className="btn ghost small" onClick={() => go('attendance')}>Need a call: <b>{needCall.length}</b> <Icon.right width="14" height="14" /></button></div>
         <div style={{ overflowX: 'auto' }}>
@@ -87,7 +93,7 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
             </tbody>
           </table>
         </div>
-      </section>
+      </section>)}
 
       <div className="period-float hq-period">
         <span className="pf-label">Charts &amp; lists for</span>
@@ -96,7 +102,7 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
       </div>
 
       <div className="dash-grid">
-        <section className="card span2">
+        {slot('bars', <section className="card span2">
           <div className="card-head"><div><div className="card-title">Present each Sunday · {P.label}</div><div className="card-sub">Stacked by center. Tap a center below to hide it.</div></div></div>
           {sundays.length ? <StackedBars weeks={bars} keys={C.map((x) => x.c.id)} labels={Object.fromEntries(C.map((x) => [x.c.id, x.c.name]))} colors={Object.fromEntries(C.map((x) => [x.c.id, colorOf(R, x.c.id)]))} hidden={hidden} /> : <p className="muted small">No Sundays recorded in this period.</p>}
           <div className="legend">{C.map((x) => (
@@ -104,14 +110,14 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
               <span className="dot" style={{ background: colorOf(R, x.c.id) }} />{x.c.name}
             </button>
           ))}</div>
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('rate', <section className="card">
           <div className="card-head"><div><div className="card-title">Leaders &amp; members rate</div><div className="card-sub">Each center, each Sunday · {P.label}</div></div></div>
           {sundays.length ? <RateLines weeks={lines} series={C.filter((x) => x.idx.held.length).map((x) => ({ key: x.c.id, label: x.c.name, color: colorOf(R, x.c.id) }))} /> : <p className="muted small">No Sundays in this period.</p>}
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('months', <section className="card">
           <div className="card-head"><div><div className="card-title">Month by month</div><div className="card-sub">Average present per Sunday · {P.label}</div></div></div>
           <div style={{ overflowX: 'auto' }}>
             <table className="gtable heat">
@@ -126,9 +132,9 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
               })}</tbody>
             </table>
           </div>
-        </section>
+        </section>)}
 
-        <section className="card span2">
+        {slot('ranking', <section className="card span2">
           <div className="card-head">
             <div><div className="card-title">{dir === 'top' ? 'Most faithful' : 'Needs encouragement'} · {rankBy === 'Leader' ? 'leaders' : 'members'} · {P.label}</div><div className="card-sub">Across {only ? R.centers.find((c) => c.id === only)?.name : 'every center'}: Sundays present ÷ Sundays on the list (at least 2).</div></div>
             <div className="seg"><button className={dir === 'top' ? 'on' : ''} onClick={() => setDir('top')}>Top</button><button className={dir === 'bottom' ? 'on' : ''} onClick={() => setDir('bottom')}>Lowest</button></div>
@@ -152,9 +158,9 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
               ))}
             </ol>
           )}
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('promising', <section className="card">
           <div className="card-head"><div><div className="card-title">Promising members</div><div className="card-sub">New comers coming most faithfully since their first visit (4+ Sundays), every center.</div></div></div>
           {promise.length === 0 ? <p className="muted small">No new comers with 4 or more Sundays yet.</p> : (
             <ol className="rank-list">{promise.map((v, i) => (
@@ -165,9 +171,9 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
               </li>
             ))}</ol>
           )}
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('upcoming', <section className="card">
           <div className="card-head"><div><div className="card-title">Coming up</div><div className="card-sub">HQ plans and every center’s planned dates, next 30 days.</div></div><button className="btn ghost small" onClick={() => go('plans')}>All plans</button></div>
           {upcoming.length === 0 ? <p className="muted small">Nothing planned in the next 30 days.</p> : (
             <ul className="hq-agenda">{upcoming.slice(0, 8).map((u) => (
@@ -175,7 +181,7 @@ export default function HqOverview({ R, C, today, period, setPeriod, openCenter,
             ))}</ul>
           )}
           {three.length > 0 && <p className="small" style={{ marginTop: 10 }}><span className="tag bad">{three.length}</span> leaders, members or informal members have missed 3+ Sundays in a row. <button className="link small" onClick={() => go('attendance')}>See who</button></p>}
-        </section>
+        </section>)}
       </div>
     </div>
   );

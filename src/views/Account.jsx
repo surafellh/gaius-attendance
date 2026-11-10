@@ -36,7 +36,7 @@ export default function AccountPanel({ profile, perm, onExport, go, studio, setM
       {msg && <div className="banner ok">{msg}</div>}
       {!hq && <div className="form-section">Quick actions</div>}
       {!hq && <div className="row2">
-        <button type="button" className="btn lime" onClick={onExport}><Icon.download width="18" height="18" /> Downloads</button>
+        {onExport ? <button type="button" className="btn lime" onClick={onExport}><Icon.download width="18" height="18" /> Downloads</button> : <span />}
         {perm.users || profile.role === 'admin' ? <button type="button" className="btn ghost" onClick={() => go('users')}><Icon.settings width="18" height="18" /> App admin</button> : <span />}
       </div>}
       <div className="form-section">My settings</div>

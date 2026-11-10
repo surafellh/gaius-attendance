@@ -54,6 +54,8 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
   const [tables, setTables] = useState(() => PROFILE_TABLES.map(([k]) => k));
   const [planSem, setPlanSem] = useState(initial.sem || semesterOf(today));
   const planSems = SEMESTERS.filter((s) => semesterStart(s) <= addDays(today, 400)).reverse();
+  const cfgD = ctx.config?.downloads || {};
+  const allowed = ([k]) => { const c = cfgD[k]; return !c || (c.on && (!c.roles || perm.admin || c.roles.includes(ctx.profile?.role))); };
   const toggle = (set, k) => set((xs) => (xs.includes(k) ? xs.filter((x) => x !== k) : [...xs, k]));
 
   const REPORTS = [
@@ -75,14 +77,64 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
     ...(perm.finance ? [['finance', 'Money & assets', 'Money in and out, and the assets list', 'period']] : []),
     ['everything', 'Everything', 'All of the above in one Excel workbook', 'period'],
   ];
-  const meta = [...REPORTS, ...HISTORY].find((k) => k[0] === kind) || REPORTS[0];
+  const shownR = REPORTS.filter(allowed), shownH = HISTORY.filter(allowed);
+  const meta = [...shownR, ...shownH].find((k) => k[0] === kind) || shownR[0] || shownH[0];
+  if (meta && meta[0] !== kind) setTimeout(() => setKind(meta[0]), 0);
   const chosen = kind === 'profiles' ? tables : ['month', 'semester', 'history'].includes(kind) ? cats : ['x'];
 
-  const build = () => {
-    const [a, b, label] = P.range();
+  const build = () => buildReport(ctx, kind, { range: P.range(), month: P.month, sem: P.sem, planSem, cats, tables });
+  const Kind = ([k, l, d]) => (
+    <button key={k} type="button" className={`export-kind ${kind === k ? 'on' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}><b>{l}</b><span>{d}</span></button>
+  );
+  return (
+    <Sheet title="Downloads" onClose={onClose}>
+      <div className="form">
+        {!meta && <p className="muted">No downloads are turned on for your role.</p>}
+        {shownR.length > 0 && <><div className="dl-group">Reports</div>
+        <div className="export-kinds">{shownR.map(Kind)}</div></>}
+        {shownH.length > 0 && <><div className="dl-group">History &amp; records</div>
+        <div className="export-kinds">{shownH.map(Kind)}</div></>}
+        {meta && <div className="form-section">{meta[1]}</div>}
+        {meta?.[3] === 'period' && P.ui}
+        {meta?.[3] === 'monthpick' && <label>Month<select value={P.month} onChange={(e) => P.setMonth(e.target.value)}>{P.months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}</select></label>}
+        {meta?.[3] === 'sempick' && <label>Semester<select value={P.sem} onChange={(e) => P.setSem(e.target.value)}>{P.sems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select></label>}
+        {meta?.[3] === 'plansem' && <label>Semester<select value={planSem} onChange={(e) => setPlanSem(e.target.value)}>{planSems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select></label>}
+        {['month', 'semester', 'history', 'profiles'].includes(kind) && <fieldset className="export-cats">
+          <legend>{kind === 'profiles' ? 'Tables to include' : 'Groups to include'}</legend>
+          {(kind === 'profiles' ? PROFILE_TABLES : REPORT_CATS).map(([k, l]) => (
+            <label key={k} className="check"><input type="checkbox" checked={chosen.includes(k)} onChange={() => toggle(kind === 'profiles' ? setTables : setCats, k)} /> {l}</label>
+          ))}
+        </fieldset>}
+        {kind === 'profiles' && <p className="small muted" style={{ margin: 0 }}>Includes phone numbers – share it only with the leaders and HQ.</p>}
+        {kind === 'everything' && <p className="small muted" style={{ margin: 0 }}>One workbook, one tab per table. For a long period the PDF can be very long – Excel is better.</p>}
+        <div className="row2">
+          <button type="button" className="btn lime" disabled={busy || !chosen.length || !meta} onClick={async () => { setBusy(true); try { await toExcel(build()); } finally { setBusy(false); } }}><Icon.grid width="18" height="18" /> Excel</button>
+          <button type="button" className="btn ghost" disabled={!chosen.length} onClick={() => toPdf(build())}><Icon.book width="18" height="18" /> PDF</button>
+        </div>
+        <button type="button" className="btn ghost" disabled={!chosen.length} onClick={async () => {
+          const rep = build(); const sh = rep.sheets[0];
+          try { await navigator.clipboard.writeText(tableText(sh)); setCopied(`Copied “${sh.name}” – paste it into Excel, Sheets or Telegram.`); } catch { setCopied('Copy was blocked by the browser – use the PDF page’s Copy table button.'); }
+        }}><Icon.copy width="18" height="18" /> Copy table</button>
+        {copied && <p className="banner ok" style={{ margin: 0 }}>{copied}</p>}
+        <p className="muted tiny" style={{ margin: 0 }}>PDF opens a print-ready page – choose “Save as PDF”. Amharic text stays intact.</p>
+      </div>
+    </Sheet>
+  );
+}
+
+/* build one download; opts holds the period and choices. Columns hidden on the Settings page are left out. */
+export function buildReport(ctx, kind, opts = {}) {
+  const { today, perm } = ctx;
+  const [a, b, label] = opts.range || [ctx.semStart || today, today, 'this period'];
+  const month = opts.month || (() => { const m = monthOf(ctx.latest); return `${m.year}-${m.month}`; })();
+  const sem = opts.sem || semesterOf(ctx.latest);
+  const planSem = opts.planSem || semesterOf(today);
+  const cats = opts.cats || REPORT_CATS.map(([k]) => k);
+  const tables = opts.tables || PROFILE_TABLES.map(([k]) => k);
+  const rep = (() => {
     switch (kind) {
-      case 'month': { const [y, m] = P.month.split('-').map(Number); return monthlyReport(ctx, { year: y, month: m }, cats); }
-      case 'semester': return semesterReport(ctx, P.sem, cats);
+      case 'month': { const [y, m] = month.split('-').map(Number); return monthlyReport(ctx, { year: y, month: m }, cats); }
+      case 'semester': return semesterReport(ctx, sem, cats);
       case 'plansrep': return planReport(ctx.D, a, b, label);
       case 'planslist': return plansList(ctx.D, planSem);
       case 'teachplan': return teachingReport(ctx.D, planSem, ctx.progBy, today);
@@ -97,41 +149,12 @@ export default function ExportSheet({ ctx, onClose, initial = {} }) {
       case 'finance': return financeHistory(ctx, a, b, label);
       default: return everything(ctx, a, b, label, { finance: perm.finance });
     }
-  };
-  const Kind = ([k, l, d]) => (
-    <button key={k} type="button" className={`export-kind ${kind === k ? 'on' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}><b>{l}</b><span>{d}</span></button>
-  );
-  return (
-    <Sheet title="Downloads" onClose={onClose}>
-      <div className="form">
-        <div className="dl-group">Reports</div>
-        <div className="export-kinds">{REPORTS.map(Kind)}</div>
-        <div className="dl-group">History &amp; records</div>
-        <div className="export-kinds">{HISTORY.map(Kind)}</div>
-        <div className="form-section">{meta[1]}</div>
-        {meta[3] === 'period' && P.ui}
-        {meta[3] === 'monthpick' && <label>Month<select value={P.month} onChange={(e) => P.setMonth(e.target.value)}>{P.months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}</select></label>}
-        {meta[3] === 'sempick' && <label>Semester<select value={P.sem} onChange={(e) => P.setSem(e.target.value)}>{P.sems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select></label>}
-        {meta[3] === 'plansem' && <label>Semester<select value={planSem} onChange={(e) => setPlanSem(e.target.value)}>{planSems.map((s) => <option key={s} value={s}>{semName(s)}</option>)}</select></label>}
-        {['month', 'semester', 'history', 'profiles'].includes(kind) && <fieldset className="export-cats">
-          <legend>{kind === 'profiles' ? 'Tables to include' : 'Groups to include'}</legend>
-          {(kind === 'profiles' ? PROFILE_TABLES : REPORT_CATS).map(([k, l]) => (
-            <label key={k} className="check"><input type="checkbox" checked={chosen.includes(k)} onChange={() => toggle(kind === 'profiles' ? setTables : setCats, k)} /> {l}</label>
-          ))}
-        </fieldset>}
-        {kind === 'profiles' && <p className="small muted" style={{ margin: 0 }}>Includes phone numbers – share it only with the leaders and HQ.</p>}
-        {kind === 'everything' && <p className="small muted" style={{ margin: 0 }}>One workbook, one tab per table. For a long period the PDF can be very long – Excel is better.</p>}
-        <div className="row2">
-          <button type="button" className="btn lime" disabled={busy || !chosen.length} onClick={async () => { setBusy(true); try { await toExcel(build()); } finally { setBusy(false); } }}><Icon.grid width="18" height="18" /> Excel</button>
-          <button type="button" className="btn ghost" disabled={!chosen.length} onClick={() => toPdf(build())}><Icon.book width="18" height="18" /> PDF</button>
-        </div>
-        <button type="button" className="btn ghost" disabled={!chosen.length} onClick={async () => {
-          const rep = build(); const sh = rep.sheets[0];
-          try { await navigator.clipboard.writeText(tableText(sh)); setCopied(`Copied “${sh.name}” – paste it into Excel, Sheets or Telegram.`); } catch { setCopied('Copy was blocked by the browser – use the PDF page’s Copy table button.'); }
-        }}><Icon.copy width="18" height="18" /> Copy table</button>
-        {copied && <p className="banner ok" style={{ margin: 0 }}>{copied}</p>}
-        <p className="muted tiny" style={{ margin: 0 }}>PDF opens a print-ready page – choose “Save as PDF”. Amharic text stays intact.</p>
-      </div>
-    </Sheet>
-  );
+  })();
+  const hide = ctx.config?.downloads?.[kind]?.hide || [];
+  if (!hide.length) return rep;
+  return { ...rep, sheets: rep.sheets.map((sh) => {
+    if (!sh.head) return sh;
+    const keep = sh.head.map((h, i) => (hide.includes(h) ? -1 : i)).filter((i) => i >= 0);
+    return { ...sh, head: keep.map((i) => sh.head[i]), body: (sh.body || []).map((r) => (Array.isArray(r) ? keep.map((i) => r[i]) : r)), ...(sh.marks ? { marks: sh.marks.map((m) => keep.filter((i) => i < m).length) } : {}) };
+  }) };
 }

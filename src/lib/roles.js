@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG, CAPS } from './config';
 // Who can do what. The database enforces the same rules (can_read / can_mark / can_manage).
 // Only the Coordinator (አገልግሎት አስተባባሪ), the Follow-up leader and the admin change data; everyone else views.
 export const ROLES = [
@@ -14,51 +15,53 @@ export const ROLES = [
   ['former', 'Former leader', 'No access – record kept'],
   ['pending', 'Waiting for approval', 'No access yet'],
 ];
-export const roleName = (r) => ROLES.find((x) => x[0] === r)?.[1] || r;
+let NAMES = {};
+export const setRoleNames = (n) => { NAMES = n || {}; };
+export const roleName = (r) => NAMES[r] || ROLES.find((x) => x[0] === r)?.[1] || r;
 export const HQ_ROLES = ['admin', 'founder', 'director', 'hq_followup', 'hq_staff'];
-const EDIT = ['admin', 'coordinator', 'followup_leader'];
+const HQ_ONLY = ['founder', 'director', 'hq_followup', 'hq_staff'];
 
-/* opts.studio: the detailed mode (every center user can switch it on; editing still follows the role).
-   opts.side: 'hq' | 'center' – the admin can use either side; HQ roles always get the HQ side. */
+/* the account's HQ role: its main role when it is HQ only, else the extra HQ role (or none) */
+export const hqRoleOf = (p) => (HQ_ONLY.includes(p?.role) ? p.role : p?.hq_role || null);
+/* does this account have both a center side and an HQ side? */
+export const hasBothSides = (p) => p?.role === 'admin' || (!!p?.hq_role && !HQ_ROLES.includes(p?.role) && !['pending', 'former'].includes(p?.role));
+
+/* opts.studio: the detailed mode. opts.side: 'hq' | 'center' for accounts with both sides.
+   opts.config: the Settings page (what each role can do). A center role's rights apply on the center side,
+   the HQ role's rights on the HQ side – one never adds to the other. */
 export const can = (profile, opts = {}) => {
   const r = profile?.role;
-  const edit = EDIT.includes(r);
+  const caps = opts.config?.caps || DEFAULT_CONFIG.caps;
+  const admin = r === 'admin';
+  const read = !!r && !['pending', 'former'].includes(r);
+  const hqRole = hqRoleOf(profile);
+  const both = hasBothSides(profile);
+  const hqSide = read && (admin ? opts.side === 'hq' : HQ_ONLY.includes(r) || (both && opts.side === 'hq'));
+  const sideRole = hqSide && !admin ? hqRole : r;       // whose abilities apply right now
+  const has = (c) => admin || (read && !!caps[sideRole]?.has(c));
+  const centerHas = (c) => admin || (read && !HQ_ONLY.includes(r) && !!caps[r]?.has(c));
   return {
-    role: r,
-    read: !!r && !['pending', 'former'].includes(r),
-    mark: edit,
-    manage: edit,
-    edit,
-    users: ['admin', 'coordinator'].includes(r),
-    admin: r === 'admin',
-    hq: HQ_ROLES.includes(r),
+    role: r, read, admin, hqRole, both,
+    mark: centerHas('mark'),
+    manage: centerHas('manage'),
+    edit: centerHas('mark') || centerHas('manage'),
+    users: admin || centerHas('approve'),
+    hq: HQ_ROLES.includes(r) || !!hqRole,
     // the HQ lens: leaders, members and informal members only; no new comer names, no plan status
-    hqView: HQ_ROLES.includes(r) && r !== 'admin',
-    profiles: ['admin', 'founder', 'director', 'hq_followup', 'coordinator', 'center_leader', 'followup_leader', 'leader'].includes(r),
-    finance: r !== 'viewer',
-    meetingBanner: ['admin', 'coordinator', 'center_leader', 'followup_leader', 'leader'].includes(r),
+    hqView: HQ_ONLY.includes(r) || (hqSide && !admin),
+    profiles: has('phones'),
+    finance: has('finance'),
+    download: has('download'),
+    meetingBanner: !hqSide && has('reminders'),
     switchCenter: HQ_ROLES.includes(r),
-    studio: !!r && !!opts.studio,
-    canStudio: !!r,
-    // the HQ side is its own app: every center at once, HQ's own plans. The admin can switch sides.
-    hqSide: HQ_ROLES.includes(r) && (r !== 'admin' || opts.side === 'hq'),
-    hqEdit: HQ_ROLES.includes(r),        // HQ plans & activities, HQ events, HQ teaching plan, messages as HQ
-    backup: ['admin', 'coordinator'].includes(r),
-    restore: r === 'admin',
+    canStudio: has('studio'),
+    studio: has('studio') && !!opts.studio,
+    hqSide,
+    hqEdit: admin || (!!hqRole && (profile?.hq_access ?? (HQ_ONLY.includes(r) ? 'edit' : 'view')) === 'edit'),
+    backup: has('backup'),
+    restore: admin,
   };
 };
 
-/* what each role can do – shown on the App admin page */
-const ALL = ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => k);
-export const ACCESS = [
-  ['See attendance, dashboard & reports', ALL],
-  ['HQ view: every center, leaders / members / informal members only', ['founder', 'director', 'hq_followup', 'hq_staff']],
-  ['Profiles and phone numbers', ['admin', 'founder', 'director', 'hq_followup', 'coordinator', 'center_leader', 'followup_leader', 'leader']],
-  ['Edit: attendance, people, programs, plans, finance, calls', EDIT],
-  ['Studio mode (full detail)', ALL],
-  ['HQ side: all centers at once, HQ plans & activities', HQ_ROLES],
-  ['HQ events, HQ teaching plan, messages as HQ', HQ_ROLES],
-  ['Approve users and set roles', ['admin', 'coordinator']],
-  ['Backup', ['admin', 'coordinator']],
-  ['Restore a backup', ['admin']],
-];
+/* what each role can do – from the Settings page */
+export const accessTable = (config) => CAPS.map(([cap, label, side]) => [label, ['admin', ...Object.keys(config.caps).filter((r) => config.caps[r].has(cap))], side]);

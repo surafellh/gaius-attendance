@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, cloneElement, Fragment } from 'react';
+import { DEFAULT_CONFIG } from '../lib/config';
 import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterOf, semNo, semYear } from '../lib/ethiopian';
 import { pct, counts, readiness, READY_RATE, FOLLOWED } from '../lib/stats';
 import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon, PeriodPicker, periodOf } from './common';
@@ -11,7 +12,7 @@ const BAR_LABELS = { 'Leader': 'Leaders', 'Senior Leader': 'Senior leaders', 'Me
 const barKey = (r) => (r.category === 'Active Informal Member' || r.category === 'Inactive Informal Member' ? 'Informal' : r.category);
 const RANK_GROUPS = [['Member', 'Members'], ['Leader', 'Leaders'], ['Active Informal Member', 'Informal members'], ['New Comer', 'New comers']];
 
-export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today, perm }) {
+export default function Dashboard({ idx, summaries, latest, week, setWeek, calInfo, progBy, D, personBy, openPerson, go, today, perm, config }) {
   const sel = week || latest;
   const [period, setPeriod] = useState(() => ({ kind: 'sem', no: semNo(semesterOf(sel)), year: semYear(semesterOf(sel)) }));
   const P = periodOf(period);
@@ -23,7 +24,13 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const [expanded, setExpanded] = useState(false);
   const [ov, setOv] = useState({});             // a card's own period, overriding the page period
   const Pf = (card) => (ov[card] ? periodOf({ ...ov[card], year: ov[card].year ?? period.year }) : P);
-  const cardPeriod = (card) => !perm.studio ? null : <CardPeriod value={ov[card]} year={period.year} pageLabel={P.label} onChange={(v) => setOv((o) => ({ ...o, [card]: v }))} />;
+  // what this dashboard shows: the Settings page (Dashboard), in the current mode
+  const cfg = config || DEFAULT_CONFIG;
+  const mode = perm.studio ? 'studio' : 'simple';
+  const cardOn = (k) => { const c = cfg.dash.find((x) => x.key === k); return c ? !!c[mode] || (hq && k === 'promising') : true; };
+  const order = (k) => cfg.dash.findIndex((x) => x.key === k);
+  const slot = (k, el) => (cardOn(k) ? cloneElement(el, { style: { ...(el.props.style || {}), order: order(k) } }) : null);
+  const cardPeriod = (card) => !cardOn('periods') ? null : <CardPeriod value={ov[card]} year={period.year} pageLabel={P.label} onChange={(v) => setOv((o) => ({ ...o, [card]: v }))} />;
   const weeksOf = (Pc) => idx.held.filter((s) => s >= Pc.from && s <= Pc.to);
 
   const heldIdx = idx.held.indexOf(sel);
@@ -121,6 +128,23 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const leaders = cur.byCat.Leader, members = cur.byCat.Member;
   const shown = expanded ? ranked.list : ranked.list.slice(0, 8);
 
+  const TILE = {
+    rate: <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={<><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</>} />,
+    leaders: <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />,
+    members: <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />,
+    informalnc: <Kpi label="Informal & new comers" color={CAT_COLOR['New Comer']} val={cur.informal + cur.newComers} foot={`${cur.informal} informal · ${cur.newComers} new comers · ${firstTimers} first time`} />,
+    informal: <Kpi label="Informal members" color={CAT_COLOR['Active Informal Member']} val={cur.informal} foot="present" />,
+    others: <Kpi label="Others" color={CAT_COLOR['New Comer']} val={cur.present - leaders.present - members.present - cur.informal} foot="senior leaders and new comers" />,
+    firsttime: <Kpi label="First-time comers" color="var(--lime-strong)" val={firstTimers} foot={`came for the first time on ${etLabel(sel)}`} />,
+    needcall: (
+      <button className="kpi" onClick={() => go(hq ? 'attendance' : 'calls')} style={{ cursor: 'pointer' }}>
+        <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
+        <span className="kpi-val">{dropped}</span>
+        <span className="kpi-foot">{hq ? 'leaders, members & informal · came last week, missed this one' : 'came last week, missed this one ›'}</span>
+      </button>
+    ),
+  };
+
   return (
     <div className="page">
       <section className="dash-bar">
@@ -137,38 +161,17 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
 
       {perm.meetingBanner && <Reminders D={D} today={today} go={go} />}
 
-      <section className="kpis" aria-label={`Summary for ${etLabel(sel, true)}`}>
+      {cardOn('kpis') && <section className="kpis" aria-label={`Summary for ${etLabel(sel, true)}`}>
         <div className="kpi hero">
           <span className="kpi-label">Total present · {etLabel(sel)}</span>
           <span className="kpi-val">{cur.present}</span>
           <span className="kpi-foot"><Delta d={prev ? cur.present - prev.present : null} /> vs last Sunday</span>
         </div>
-        {hq ? <>
-          <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />
-          <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />
-          <Kpi label="Informal members" color={CAT_COLOR['Active Informal Member']} val={cur.informal} foot="present" />
-          <Kpi label="Others" color={CAT_COLOR['New Comer']} val={cur.present - leaders.present - members.present - cur.informal} foot="senior leaders and new comers" />
-          <Kpi label="First-time comers" color="var(--lime-strong)" val={firstTimers} foot={`came for the first time on ${etLabel(sel)}`} />
-          <button className="kpi" onClick={() => go('attendance')} style={{ cursor: 'pointer' }}>
-            <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
-            <span className="kpi-val">{dropped}</span>
-            <span className="kpi-foot">leaders, members &amp; informal · came last week, missed this one</span>
-          </button>
-        </> : <>
-        <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={<><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</>} />
-        <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />
-        <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />
-        <Kpi label="Informal & new comers" color={CAT_COLOR['New Comer']} val={cur.informal + cur.newComers} foot={`${cur.informal} informal · ${cur.newComers} new comers · ${firstTimers} first time`} />
-        <button className="kpi" onClick={() => go('calls')} style={{ cursor: 'pointer' }}>
-          <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
-          <span className="kpi-val">{dropped}</span>
-          <span className="kpi-foot">came last week, missed this one ›</span>
-        </button>
-        </>}
-      </section>
+        {cfg.tiles.filter((t) => t[hq ? 'hq' : 'center']).map((t) => <Fragment key={t.key}>{TILE[t.key]}</Fragment>)}
+      </section>}
 
       <div className="dash-grid">
-        <section className="card span2">
+        {slot('bars', <section className="card span2">
           <div className="card-head">
             <div>
               <div className="card-title">Who came each Sunday · {PB.label}</div>
@@ -185,9 +188,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             ))}
             {hidden.size > 0 && <button className="legend-all" onClick={() => setHidden(new Set())}>Show all</button>}
           </div>
-        </section>
+        </section>)}
 
-        <section className="card span2">
+        {slot('rate', <section className="card span2">
           <div className="card-head">
             <div>
               <div className="card-title">Leaders & members rate</div>
@@ -205,11 +208,11 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             <span className="lg"><i className="ln" style={{ background: 'var(--c-member)' }} />Members</span>
             <span className="lg"><i className="ln" style={{ background: 'var(--c-leader)' }} />Leaders</span>
           </div>
-        </section>
+        </section>)}
 
-        <Compare idx={idx} summaries={summaries} D={D} period={period} P={P} hq={hq} />
+        {slot('compare', <Compare idx={idx} summaries={summaries} D={D} period={period} P={P} hq={hq} />)}
 
-        {perm.studio && <section className="card">
+        {slot('groups', <section className="card">
           <div className="card-head"><div><div className="card-title">Groups on {etLabel(sel)}</div><div className="card-sub">Compared with the 4 Sundays before.</div></div></div>
           <table className="gtable">
             <thead><tr><th>Group</th><th>Came</th><th>Rate</th><th>4-wk avg</th></tr></thead>
@@ -231,9 +234,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               <tr className="total"><td>Total present</td><td className="num">{cur.present}</td><td className="num">{pct(cur.rate)}<span className="tiny muted"> L+M</span></td><td /></tr>
             </tbody>
           </table>
-        </section>}
+        </section>)}
 
-        <section className="card">
+        {slot('newcomers', <section className="card">
           <div className="card-head"><div><div className="card-title">New comers · {PN.label}</div><div className="card-sub">Ready = 6 months since the first visit and at least {Math.round(READY_RATE * 100)}% since then. Leaders still decide.</div></div>{cardPeriod('nc')}</div>
           <div className="funnel">
             {[['First-time visitors', pipeline.first], ['Came back again', pipeline.cameBack], ['Active new comers now', pipeline.activeNow], ['Ready for membership', pipeline.ready.length], ['Became members', pipeline.becameMembers]].map(([l, n], i, arr) => (
@@ -249,9 +252,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               {pipeline.ready.map((p) => <button key={p.id} className="chipbtn" onClick={() => openPerson(p.id)}>{p.name}</button>)}
             </div>
           )}
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('programs', <section className="card">
           <div className="card-head"><div><div className="card-title">Programs · {PP.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div>{cardPeriod('progs')}</div>
           <ul className="prog-list scroll-y">
             {progWeeks.map((s) => {
@@ -268,9 +271,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               );
             })}
           </ul>
-        </section>
+        </section>)}
 
-        <section className="card">
+        {slot('months', <section className="card">
           <div className="card-head"><div><div className="card-title">Month by month</div><div className="card-sub">Average per Sunday in {PM.label}.</div></div>{cardPeriod('months')}</div>
           <table className="gtable">
             <thead><tr><th>Month</th><th className="hide-sm">Sundays</th><th>Total present</th><th>L+M rate</th></tr></thead>
@@ -285,9 +288,9 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
               ))}
             </tbody>
           </table>
-        </section>
+        </section>)}
 
-        <section className="card span2">
+        {slot('ranking', <section className="card span2">
           <div className="card-head">
             <div>
               <div className="card-title">{isNC ? (ncView === 'since' ? 'New comers since they joined' : 'Membership review') : rankDir === 'top' ? 'Most faithful' : 'Needs encouragement'} · {PR.label}</div>
@@ -328,8 +331,8 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </ol>
           {ranked.list.length > 8 && <button className="btn ghost wide" onClick={() => setExpanded(!expanded)}>{expanded ? 'Show fewer' : `Show all ${ranked.list.length}`}</button>}
           {ranked.tooNew.length > 0 && <p className="small muted" style={{ marginTop: 10 }}>Too early to rank (under 4 Sundays): {ranked.tooNew.map((x) => x.p.name).join(', ')}</p>}
-        </section>
-        {hq && <Promising idx={idx} rows={rows} personBy={personBy} sel={sel} />}
+        </section>)}
+        {slot('promising', <Promising idx={idx} rows={rows} personBy={personBy} sel={sel} />)}
       </div>
       <p className="muted tiny">Each Sunday keeps the group people had on that day, so past numbers don't change later. {fmtGreg(sel)}.</p>
     </div>
@@ -383,14 +386,14 @@ function CardPeriod({ value, year, pageLabel, onChange }) {
 }
 
 /* HQ: the new comers coming most faithfully since their first visit – the members of tomorrow */
-function Promising({ idx, rows, personBy, sel }) {
+function Promising({ idx, rows, personBy, sel, style }) {
   const list = rows.filter((r) => r.category === 'New Comer' && r.active && personBy[r.person_id]).map((r) => {
     const p = personBy[r.person_id];
     const x = readiness(p, idx.byPerson[p.id] || {}, idx.held, sel);
     return { p, x };
   }).filter(({ x }) => x.weeksIn >= 4 && x.sinceRate != null).sort((a, b) => b.x.sinceRate - a.x.sinceRate || b.x.weeksIn - a.x.weeksIn).slice(0, 6);
   return (
-    <section className="card">
+    <section className="card" style={style}>
       <div className="card-head"><div><div className="card-title">Promising members</div><div className="card-sub">New comers coming most faithfully since their first visit (at least 4 Sundays).</div></div></div>
       {list.length === 0 ? <p className="muted small">No new comers with 4 or more Sundays yet.</p> : (
         <ol className="rank-list">
@@ -409,7 +412,7 @@ function Promising({ idx, rows, personBy, sel }) {
 
 /* the period against the same period a year earlier – a semester, the whole year, a month or the last 12 months */
 const shiftYear = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 364 * 864e5).toISOString().slice(0, 10);
-function Compare({ idx, summaries, D, period, P, hq }) {
+function Compare({ idx, summaries, D, period, P, hq, style }) {
   if (period.kind === 'all') return null;
   const Q = period.kind === 'last12' ? { from: shiftYear(P.from, -1), to: shiftYear(P.to, -1), label: 'the 12 months before' } : { ...periodOf({ ...period, year: period.year - 1 }) };
   const stats = (X) => {
@@ -437,7 +440,7 @@ function Compare({ idx, summaries, D, period, P, hq }) {
     ...(hq ? [] : [['Became members', a.became, b.became, (v) => v]]),
   ];
   return (
-    <section className="card span2">
+    <section className="card span2" style={style}>
       <div className="card-head"><div><div className="card-title">{P.label} compared with {period.kind === 'last12' ? 'the year before' : Q.label}</div>
         <div className="card-sub">Averages per Sunday. Pick Whole year, 12 months or a semester at the top to compare a longer stretch.</div></div></div>
       {!b.n && <p className="muted small">No Sundays recorded in {Q.label} – nothing to compare with yet.</p>}

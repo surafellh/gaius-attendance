@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase, fetchAll } from './lib/supabase';
 import { latestSunday, todayIso, semesterOf, semesterStart, etLabel } from './lib/ethiopian';
 import { indexAttendance, activeOn, weekSummary } from './lib/stats';
-import { can, roleName } from './lib/roles';
+import { can, roleName, setRoleNames } from './lib/roles';
 import Dashboard from './views/Dashboard';
 import Attendance from './views/Attendance';
 import FollowUp from './views/FollowUp';
 import People from './views/People';
 import AccountPanel, { loadPrefs, applyPrefs } from './views/Account';
 import Departments from './views/Departments';
-import Users from './views/Users';
+import Admin from './views/Admin';
 import Auth from './views/Auth';
 import Landing from './views/Landing';
-import Backup from './views/Backup';
 import { undo, redo, useUndo, recordMarks, setUndoReload, record } from './lib/undo';
 import Meeting from './views/Meeting';
 import CalendarPage from './views/CalendarPage';
@@ -26,6 +25,7 @@ import HqApp from './hq/HqApp';
 import PersonSheet from './views/Person';
 import { Icon, Mark, Sheet } from './views/common';
 import { scopeToCenter } from './lib/scope';
+import { buildConfig, DEFAULT_CONFIG } from './lib/config';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -82,18 +82,18 @@ const SIDE_KEY = 'gaius-side';
 
 function Main({ profile: realProfile }) {
   const [viewAs, setViewAs] = useState(null);          // admin only: see the app as another role
-  const profile = viewAs ? { ...realProfile, role: viewAs } : realProfile;
+  const profile = viewAs ? { ...realProfile, role: viewAs, hq_role: null, hq_access: 'edit' } : realProfile;
   const [studio, setStudio] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === '1'; } catch { return false; } });
-  const [side, setSideState] = useState(() => { try { return localStorage.getItem(SIDE_KEY) || 'hq'; } catch { return 'hq'; } });
+  const [side, setSideState] = useState(() => { const d = realProfile.role === 'admin' ? 'hq' : 'center'; try { return localStorage.getItem(SIDE_KEY) || d; } catch { return d; } });
   const setSide = (v) => { setSideState(v); try { localStorage.setItem(SIDE_KEY, v); } catch { /* private mode */ } window.scrollTo(0, 0); };
-  const perm = can(profile, { studio, side });
   const [tab, setTab] = useState(() => { const p = loadPrefs(); applyPrefs(p); return p.start || 'home'; });
   const [menu, setMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [centerId, setCenterId] = useState(realProfile.center_id || 1);
-  const [R, setR] = useState({ centers: [], people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true, reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: true, lessonTopics: [], r4: true, site: {} });
+  const [R, setR] = useState({ centers: [], people: [], att: [], programs: [], departments: [], members: [], assignments: [], history: [], center: null, criteria: [], evals: [], events: [], meetings: [], agenda: [], plan: [], p2: true, plans: [], items: [], lessons: [], plessons: [], r2: true, reconcile: [], messages: [], reads: [], assets: [], ledger: [], r3: true, lessonTopics: [], r4: true, site: {}, config: DEFAULT_CONFIG });
+  const perm = can(profile, { studio, side, config: R.config });
   const [personId, setPersonId] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [week, setWeek] = useState(null); // selected Sunday shared by dashboard & follow-up (null = latest)
@@ -129,6 +129,12 @@ function Main({ profile: realProfile }) {
       // Release 4: roadmap lessons linked to program topics
       try { Object.assign(p2, { lessonTopics: await q('lesson_topics'), r4: true }); } catch { Object.assign(p2, { lessonTopics: [], r4: false }); }
       try { Object.assign(p2, { activities: await q('hq_activities'), r6: true }); } catch { Object.assign(p2, { activities: [], r6: false }); }
+      try {
+        const [caps, sets] = await Promise.all([q('role_caps'), q('app_settings')]);
+        const settings = Object.fromEntries(sets.map((x) => [x.key, x.value]));
+        Object.assign(p2, { config: buildConfig(caps, settings), r7: true });
+      } catch { Object.assign(p2, { config: DEFAULT_CONFIG, r7: false }); }
+      setRoleNames(p2.config.roleNames);
       try { const rows = await q('site_info'); Object.assign(p2, { site: Object.fromEntries(rows.map((r) => [r.key, r.value])), r5: true }); } catch { Object.assign(p2, { site: {}, r5: false }); }
       setR({
         centers: centers.sort((a, b) => a.id - b.id), people: people.sort((a, b) => (a.sn ?? 1e9) - (b.sn ?? 1e9)),
@@ -258,7 +264,7 @@ function Main({ profile: realProfile }) {
   const ctx = {
     profile, perm, realProfile, studio, D, idx, latest, today, progBy, personBy, summaries, calInfo, rosterFor,
     saveMark, saveMarks, saveProgram, createRoll, reload: load, setError, openPerson: setPersonId, week, setWeek, openExport: (o) => setExporting(o || {}),
-    semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: (k) => goTab({ follow: 'calls', register: 'people', profiles: 'people' }[k] || k),
+    config: R.config, semester: semesterOf(latest), semStart: semesterStart(semesterOf(latest)), go: (k) => goTab({ follow: 'calls', register: 'people', profiles: 'people' }[k] || k),
   };
 
   const alerts = useMemo(() => {
@@ -282,7 +288,7 @@ function Main({ profile: realProfile }) {
 
   if (perm.hqSide) {
     return <HqApp R={R} today={today} profile={profile} realProfile={realProfile} perm={perm} reload={load} setError={setError} error={error} loading={loading} Logo={Logo}
-      onCenterSide={realProfile.role === 'admin' && !viewAs ? () => setSide('center') : null} viewAs={viewAs} setViewAs={pickViewAs} studio={studio} setMode={setMode} />;
+      onCenterSide={perm.both && !viewAs ? () => setSide('center') : null} viewAs={viewAs} setViewAs={pickViewAs} studio={studio} setMode={setMode} />;
   }
 
   return (
@@ -309,7 +315,7 @@ function Main({ profile: realProfile }) {
                 {R.centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
-            {realProfile.role === 'admin' && !viewAs && <button className="side-switch light" onClick={() => setSide('hq')} title="Switch to the HQ side: every center at once"><Icon.layers /><span className="desk-only">HQ side</span></button>}
+            {perm.both && !viewAs && <button className="side-switch light" onClick={() => setSide('hq')} title="Switch to the HQ side: every center at once"><Icon.layers /><span className="desk-only">HQ side</span></button>}
             {perm.edit && (
               <span className="undo-group">
                 <button className="top-icon" disabled={!U.canUndo || U.busy} onClick={() => doUndo(undo, 'Undone')} title={U.canUndo ? `Undo: ${U.undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><Icon.undo /></button>
@@ -319,7 +325,7 @@ function Main({ profile: realProfile }) {
             <button className={`top-icon ${tab2 === 'messages' ? 'on' : ''}`} onClick={() => goTab('messages')} aria-label="Messages" title="Messages">
               <Icon.mail />{unread ? <span className="dot-badge">{unread}</span> : null}
             </button>
-            <button className="top-icon hide-phone" onClick={() => setExporting({})} aria-label="Downloads and reports" title="Downloads"><Icon.download /></button>
+            {perm.download && <button className="top-icon hide-phone" onClick={() => setExporting({})} aria-label="Downloads and reports" title="Downloads"><Icon.download /></button>}
             {perm.canStudio && (
               <button className={`mode-toggle ${perm.studio ? 'on' : ''}`} onClick={() => setMode(!studio)} title={perm.studio ? 'Studio mode: every detail. Tap for the simple view.' : 'Simple view. Tap for Studio mode (every detail).'} aria-pressed={perm.studio}>
                 <Icon.layers /><span className="desk-only">{perm.studio ? 'Studio' : 'Simple'}</span>
@@ -362,7 +368,7 @@ function Main({ profile: realProfile }) {
             {tab2 === 'calls' && <FollowUp {...ctx} />}
             {tab2 === 'people' && <People {...ctx} />}
             {tab2 === 'departments' && <Departments {...ctx} />}
-            {tab2 === 'users' && <><Users {...ctx} R={R} realProfile={realProfile} viewAs={viewAs} setViewAs={pickViewAs} />{perm.backup && <Backup {...ctx} R={R} realProfile={realProfile} />}</>}
+            {tab2 === 'users' && <Admin ctx={ctx} R={R} realProfile={realProfile} viewAs={viewAs} setViewAs={pickViewAs} />}
             {tab2 === 'meeting' && <Meeting {...ctx} />}
             {tab2 === 'calendar' && <CalendarPage {...ctx} />}
             {tab2 === 'leadership' && <Leadership {...ctx} />}
@@ -379,11 +385,11 @@ function Main({ profile: realProfile }) {
       </main>
 
       {toast && <div className="toast">{toast}</div>}
-      {exporting && <ExportSheet ctx={ctx} initial={exporting} onClose={() => setExporting(null)} />}
+      {exporting && perm.download && <ExportSheet ctx={ctx} initial={exporting} onClose={() => setExporting(null)} />}
       {personId && personBy[personId] && <PersonSheet {...ctx} person={personBy[personId]} onClose={() => setPersonId(null)} />}
       {menu && (
         <Sheet title="Account" onClose={() => setMenu(false)}>
-          <AccountPanel profile={realProfile} perm={perm} studio={studio} setMode={setMode} onExport={() => { setMenu(false); setExporting({}); }} go={(k) => { setMenu(false); goTab(k); }} />
+          <AccountPanel profile={realProfile} perm={perm} studio={studio} setMode={setMode} onExport={perm.download ? () => { setMenu(false); setExporting({}); } : null} go={(k) => { setMenu(false); goTab(k); }} />
         </Sheet>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { ROLES, ACCESS, roleName, HQ_ROLES } from '../lib/roles';
+import { ROLES, accessTable, roleName, HQ_ROLES } from '../lib/roles';
+import { HQ_ROLE_KEYS } from '../lib/config';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -30,18 +31,12 @@ export default function Users({ D, R, perm, profile, realProfile, viewAs, setVie
   const leaders = D.people.filter((p) => ['Leader', 'Senior Leader'].includes(p.category));
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">App admin</h1>
-          <p className="page-sub">Users, roles, center settings, backup &amp; restore{isAdmin ? ', landing page and “view as”' : ''}. Only the Coordinator, the Follow-up leader and the admin can change data; everyone else views.</p>
-        </div>
-      </div>
+    <div className="page" style={{ paddingTop: 0 }}>
       {isAdmin && (
         <section className="card">
-          <div className="card-head"><div><div className="card-title">View as a role</div><div className="card-sub">Check exactly what a role can see: HQ roles open the HQ side, center roles the center side (view-only for leaders). A bar at the top lets you exit. To use the HQ side yourself, use the HQ side / Center side button in the header.</div></div></div>
+          <div className="card-head"><div><div className="card-title">View as a role</div><div className="card-sub">Check exactly what a role can see and do, with the abilities set on the Settings tab. HQ roles open the HQ side, center roles the center side. A bar at the top lets you exit.</div></div></div>
           <div className="chips" style={{ flexWrap: 'wrap' }}>
-            {ROLES.filter(([k]) => !['former', 'pending', 'admin'].includes(k)).map(([k, l]) => <button key={k} className={`chipbtn ${viewAs === k ? 'on' : ''}`} onClick={() => setViewAs(viewAs === k ? null : k)}>{l}</button>)}
+            {ROLES.filter(([k]) => !['former', 'pending', 'admin'].includes(k)).map(([k]) => <button key={k} className={`chipbtn ${viewAs === k ? 'on' : ''}`} onClick={() => setViewAs(viewAs === k ? null : k)}>{roleName(k)}</button>)}
           </div>
         </section>
       )}
@@ -62,18 +57,28 @@ export default function Users({ D, R, perm, profile, realProfile, viewAs, setVie
       <section className="card flush">
         <div style={{ overflowX: 'auto' }}>
           <table className="tbl">
-            <thead><tr><th>Name</th><th>Access</th>{isAdmin && <th>Center</th>}<th>Title</th><th>Linked person</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th>{isAdmin && <><th>Center</th><th title="A second role on the HQ side – the same account switches between the two">HQ role</th><th title="On the HQ side: view only, or also edit HQ plans, activities and events">HQ access</th></>}<th>Title</th><th>Linked person</th></tr></thead>
             <tbody>
               {shown.map((u) => (
                 <tr key={u.user_id}>
                   <td><b>{u.full_name}</b><div className="muted small">{u.email}</div></td>
                   <td>
                     <select value={u.role} disabled={!perm.users || u.user_id === me.user_id || (!isAdmin && !CENTER_ROLES.includes(u.role))} onChange={(e) => upd(u, { role: e.target.value })}>
-                      {ROLES.filter(([k]) => isAdmin || CENTER_ROLES.includes(k) || k === u.role).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {ROLES.filter(([k]) => isAdmin || CENTER_ROLES.includes(k) || k === u.role).map(([k]) => <option key={k} value={k}>{roleName(k)}</option>)}
                     </select>
                     {u.role === 'pending' && <span className="tag sun" style={{ marginLeft: 6 }}>new</span>}
                   </td>
-                  {isAdmin && <td><select value={u.center_id || 1} onChange={(e) => upd(u, { center_id: Number(e.target.value) })}>{(R?.centers || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>}
+                  {isAdmin && <>
+                    <td><select value={u.center_id || 1} onChange={(e) => upd(u, { center_id: Number(e.target.value) })}>{(R?.centers || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+                    <td>{HQ_ROLES.includes(u.role) ? <span className="muted small">{u.role === 'admin' ? 'everything' : 'main role'}</span> : (
+                      <select value={u.hq_role || ''} disabled={!R.config?.fromDb || ['pending', 'former'].includes(u.role)} onChange={(e) => upd(u, { hq_role: e.target.value || null })}>
+                        <option value="">— none</option>{HQ_ROLE_KEYS.map((k) => <option key={k} value={k}>{roleName(k)}</option>)}
+                      </select>)}</td>
+                    <td>{u.role === 'admin' ? <span className="muted small">edit</span> : (HQ_ROLES.includes(u.role) || u.hq_role) ? (
+                      <select value={u.hq_access || (R.config?.fromDb ? 'view' : 'edit')} disabled={!R.config?.fromDb} onChange={(e) => upd(u, { hq_access: e.target.value })}>
+                        <option value="view">View</option><option value="edit">Edit HQ plans</option>
+                      </select>) : <span className="faint">–</span>}</td>
+                  </>}
                   <td><input defaultValue={u.title || ''} disabled={!perm.users} placeholder="e.g. Follow-up dept." onBlur={(e) => e.target.value !== (u.title || '') && upd(u, { title: e.target.value || null })} /></td>
                   <td>
                     <select value={u.person_id || ''} disabled={!perm.users} onChange={(e) => upd(u, { person_id: e.target.value ? Number(e.target.value) : null })}>
@@ -90,11 +95,14 @@ export default function Users({ D, R, perm, profile, realProfile, viewAs, setVie
 
       <section className="card">
         <div className="card-title" style={{ marginBottom: 4 }}>Who can do what</div>
-        <div className="card-sub" style={{ marginBottom: 10 }}>The database enforces the same rules, so a role can’t see or change more than shown here.</div>
+        <div className="card-sub" style={{ marginBottom: 10 }}>{isAdmin ? 'Change it on the Settings tab. ' : ''}A center role’s rights apply on the center side, the HQ role’s on the HQ side. The database enforces the rules marked •.</div>
         <div style={{ overflowX: 'auto' }}>
           <table className="gtable access">
-            <thead><tr><th>What</th>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k, l]) => <th key={k} title={l}>{l.replace(' / Visionary', '')}</th>)}</tr></thead>
-            <tbody>{ACCESS.map(([what, who]) => <tr key={what}><td>{what}</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{who.includes(k) ? <span className="yes">✓</span> : <span className="faint">–</span>}</td>)}</tr>)}</tbody>
+            <thead><tr><th>What</th>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <th key={k} title={roleName(k)}>{roleName(k).replace(' / Visionary', '')}</th>)}</tr></thead>
+            <tbody>
+              {accessTable(R.config).map(([what, who, side]) => <tr key={what}><td>{what}{['Mark', 'Progr', 'Appro', 'See F'].some((x) => what.startsWith(x)) ? ' •' : ''}</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{(side === 'center' && HQ_ROLES.includes(k) && k !== 'admin') ? <span className="faint">·</span> : who.includes(k) ? <span className="yes">✓</span> : <span className="faint">–</span>}</td>)}</tr>)}
+              <tr><td>HQ side: all centers at once</td>{ROLES.filter(([k]) => !['former', 'pending'].includes(k)).map(([k]) => <td key={k} className="num">{HQ_ROLES.includes(k) ? <span className="yes">✓</span> : <span className="faint" title="Give them an HQ role">+HQ role</span>}</td>)}</tr>
+            </tbody>
           </table>
         </div>
       </section>
