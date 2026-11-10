@@ -1,6 +1,6 @@
 import { useMemo, useState, cloneElement, Fragment } from 'react';
 import { DEFAULT_CONFIG } from '../lib/config';
-import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterOf, semNo, semYear } from '../lib/ethiopian';
+import { etLabel, fmtGreg, toEthiopian, ET_MONTHS, ET_MONTHS_AM, semesterOf, semNo, semYear, monthOf, monthRange, monthLabel, addMonths, semesterStart, semesterEnd, semName } from '../lib/ethiopian';
 import { pct, counts, readiness, READY_RATE, FOLLOWED } from '../lib/stats';
 import { WeekPicker, Meter, Delta, CAT_COLOR, Initials, Icon, PeriodPicker, periodOf } from './common';
 import { StackedBars, RateLines } from './Charts';
@@ -111,7 +111,10 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   }, [idx, sel, personBy, rankGroup, rankDir, isNC, ncView, PR.from, PR.to, PR.label]); // eslint-disable-line
 
   // programs inside the period
-  const PP = Pf('progs');
+  // programs: one month at a time (this month first) or the whole semester
+  const [progView, setProgView] = useState(() => ({ all: false, month: monthOf(idx.held.filter((d) => d <= today).pop() || today) }));  // the month of the latest Sunday
+  const PP = progView.all ? (() => { const sm = semesterOf(today > sel ? sel : today); return { from: semesterStart(sm), to: semesterEnd(sm), label: semName(sm) }; })()
+    : (() => { const [a, b] = monthRange(progView.month); return { from: a, to: b, label: monthLabel(progView.month) }; })();
   const progWeeks = useMemo(() => {
     const P = PP, weeks = weeksOf(PP);
     const extra = Object.keys(progBy).filter((d) => d >= P.from && d <= P.to && d <= today && !idx.heldSet.has(d));
@@ -128,14 +131,19 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
   const leaders = cur.byCat.Leader, members = cur.byCat.Member;
   const shown = expanded ? ranked.list : ranked.list.slice(0, 8);
 
+  // change since the Sunday before, for the tiles that have "vs last week" ticked (Settings → Dashboard)
+  const dOn = (k) => cfg.tiles.find((t) => t.key === k)?.delta;
+  const pL = prev?.byCat.Leader, pM = prev?.byCat.Member;
+  const prevFirst = prevS ? D.people.filter((p) => p.week_joined === prevS).length : null;
+  const vs = (k, d) => (dOn(k) && prev ? <><Delta d={d} /> vs last week · </> : null);
   const TILE = {
-    rate: <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={<><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last Sunday</>} />,
-    leaders: <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={`${pct(cur.leaderRate)} came`} />,
-    members: <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={`${pct(cur.memberRate)} came`} />,
-    informalnc: <Kpi label="Informal & new comers" color={CAT_COLOR['New Comer']} val={cur.informal + cur.newComers} foot={`${cur.informal} informal · ${cur.newComers} new comers · ${firstTimers} first time`} />,
-    informal: <Kpi label="Informal members" color={CAT_COLOR['Active Informal Member']} val={cur.informal} foot="present" />,
-    others: <Kpi label="Others" color={CAT_COLOR['New Comer']} val={cur.present - leaders.present - members.present - cur.informal} foot="senior leaders and new comers" />,
-    firsttime: <Kpi label="First-time comers" color="var(--lime-strong)" val={firstTimers} foot={`came for the first time on ${etLabel(sel)}`} />,
+    rate: <Kpi label="Leaders & members rate" val={<>{pct(cur.rate)}<small>{cur.countedPresent}/{cur.counted}</small></>} foot={dOn('rate') ? <><Delta d={prev && prev.rate != null && cur.rate != null ? (cur.rate - prev.rate) * 100 : null} suffix=" pts" /> vs last week</> : `${cur.countedPresent} of ${cur.counted} came`} />,
+    leaders: <Kpi label="Leaders" color={CAT_COLOR.Leader} val={<>{leaders.present}<small>/{leaders.total}</small></>} foot={<>{vs('leaders', pL && leaders.present - pL.present)}{pct(cur.leaderRate)} came</>} />,
+    members: <Kpi label="Members" color={CAT_COLOR.Member} val={<>{members.present}<small>/{members.total}</small></>} foot={<>{vs('members', pM && members.present - pM.present)}{pct(cur.memberRate)} came</>} />,
+    informalnc: <Kpi label="Informal & new comers" color={CAT_COLOR['New Comer']} val={cur.informal + cur.newComers} foot={<>{vs('informalnc', prev && cur.informal + cur.newComers - prev.informal - prev.newComers)}{cur.informal} informal · {cur.newComers} new · {firstTimers} first time</>} />,
+    informal: <Kpi label="Informal members" color={CAT_COLOR['Active Informal Member']} val={cur.informal} foot={<>{vs('informal', prev && cur.informal - prev.informal)}present</>} />,
+    others: <Kpi label="Others" color={CAT_COLOR['New Comer']} val={cur.present - leaders.present - members.present - cur.informal} foot={<>{vs('others', prev && (cur.present - leaders.present - members.present - cur.informal) - (prev.present - pL.present - pM.present - prev.informal))}senior leaders &amp; new comers</>} />,
+    firsttime: <Kpi label="First-time comers" color="var(--lime-strong)" val={firstTimers} foot={<>{vs('firsttime', prevFirst != null && firstTimers - prevFirst)}came for the first time on {etLabel(sel)}</>} />,
     needcall: (
       <button className="kpi" onClick={() => go(hq ? 'attendance' : 'calls')} style={{ cursor: 'pointer' }}>
         <span className="kpi-label"><span className="dot" style={{ background: 'var(--absent)' }} />Need a call</span>
@@ -165,7 +173,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         <div className="kpi hero">
           <span className="kpi-label">Total present · {etLabel(sel)}</span>
           <span className="kpi-val">{cur.present}</span>
-          <span className="kpi-foot"><Delta d={prev ? cur.present - prev.present : null} /> vs last Sunday</span>
+          <span className="kpi-foot"><Delta d={prev ? cur.present - prev.present : null} /> vs last week</span>
         </div>
         {cfg.tiles.filter((t) => t[hq ? 'hq' : 'center']).map((t) => <Fragment key={t.key}>{TILE[t.key]}</Fragment>)}
       </section>}
@@ -210,7 +218,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
           </div>
         </section>)}
 
-        {slot('compare', <Compare idx={idx} summaries={summaries} D={D} period={period} P={P} hq={hq} />)}
+        {slot('compare', <Compare idx={idx} summaries={summaries} D={D} hq={hq} today={today} />)}
 
         {slot('groups', <section className="card">
           <div className="card-head"><div><div className="card-title">Groups on {etLabel(sel)}</div><div className="card-sub">Compared with the 4 Sundays before.</div></div></div>
@@ -255,8 +263,15 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
         </section>)}
 
         {slot('programs', <section className="card">
-          <div className="card-head"><div><div className="card-title">Programs · {PP.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div>{cardPeriod('progs')}</div>
-          <ul className="prog-list scroll-y">
+          <div className="card-head"><div><div className="card-title">Programs · {PP.label}</div><div className="card-sub">{progWeeks.filter((s) => progBy[s]?.kind && progBy[s].kind !== 'No meeting').length} programs recorded.</div></div></div>
+          <div className="card-nav">
+            <button className="icon-btn" disabled={progView.all} onClick={() => setProgView({ ...progView, month: addMonths(progView.month, -1) })} aria-label="Previous month"><Icon.left width="18" height="18" /></button>
+            <button className="btn ghost small" disabled={progView.all} onClick={() => setProgView({ all: false, month: monthOf(idx.held.filter((d) => d <= today).pop() || today) })} title="Back to this month">{monthLabel(progView.month)}</button>
+            <button className="icon-btn" disabled={progView.all} onClick={() => setProgView({ ...progView, month: addMonths(progView.month, 1) })} aria-label="Next month"><Icon.right width="18" height="18" /></button>
+            <div className="seg" style={{ marginLeft: 'auto' }}><button className={!progView.all ? 'on' : ''} onClick={() => setProgView({ ...progView, all: false })}>Month</button><button className={progView.all ? 'on' : ''} onClick={() => setProgView({ ...progView, all: true })}>Semester</button></div>
+          </div>
+          {progWeeks.length === 0 && <p className="muted small">No Sundays in {PP.label} yet.</p>}
+          <ul className="prog-list card-scroll">
             {progWeeks.map((s) => {
               const p = progBy[s]; const e = toEthiopian(s);
               return (
@@ -317,7 +332,7 @@ export default function Dashboard({ idx, summaries, latest, week, setWeek, calIn
             )}
           </div>
           {ranked.list.length === 0 && <p className="muted small">Nobody to rank for this period.</p>}
-          <ol className="rank-list">
+          <ol className={`rank-list ${expanded ? "card-scroll" : ""}`}>
             {shown.map(({ p, score, sub, ready, six }, i) => (
               <li key={p.id} className="rank-item" onClick={() => openPerson(p.id)}>
                 <span className="rank-pos">{i + 1}</span>
@@ -410,26 +425,32 @@ function Promising({ idx, rows, personBy, sel, style }) {
   );
 }
 
-/* the period against the same period a year earlier – a semester, the whole year, a month or the last 12 months */
-const shiftYear = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 364 * 864e5).toISOString().slice(0, 10);
-function Compare({ idx, summaries, D, period, P, hq, style }) {
-  if (period.kind === 'all') return null;
-  const Q = period.kind === 'last12' ? { from: shiftYear(P.from, -1), to: shiftYear(P.to, -1), label: 'the 12 months before' } : { ...periodOf({ ...period, year: period.year - 1 }) };
-  const stats = (X) => {
-    const weeks = idx.held.filter((s) => s >= X.from && s <= X.to);
+/* a month against the month before: pick any month (this month first) */
+function Compare({ idx, summaries, D, hq, today, style }) {
+  const months = useMemo(() => {
+    const seen = new Map();
+    for (const s of [...idx.held, today]) { const m = monthOf(s); seen.set(`${m.year}-${m.month}`, m); }
+    return [...seen.values()].sort((x, y) => y.year - x.year || y.month - x.month);
+  }, [idx.held, today]);
+  const [pick, setPick] = useState(() => { const last = idx.held.filter((s) => s <= today).pop(); const m = monthOf(last || today); return `${m.year}-${m.month}`; });
+  const [yy, mm] = pick.split('-').map(Number);
+  const A = { year: yy, month: mm }, B = addMonths(A, -1);
+  const stats = (M) => {
+    const [from, to] = monthRange(M);
+    const weeks = idx.held.filter((s) => s >= from && s <= to);
     const w = weeks.map((s) => summaries[s]);
-    const avg = (f) => { const v = w.map(f).filter((x) => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-    const inX = (d) => d && d >= X.from && d <= X.to;
+    const avg = (f) => { const v = w.map(f).filter((x) => x != null); return v.length ? v.reduce((a2, b2) => a2 + b2, 0) / v.length : null; };
+    const inX = (d) => d && d >= from && d <= to;
     return {
       n: weeks.length, present: avg((x) => x.present), rate: avg((x) => x.rate), leaders: avg((x) => x.byCat.Leader.present), members: avg((x) => x.byCat.Member.present),
       informal: avg((x) => x.informal), best: w.length ? Math.max(...w.map((x) => x.present)) : null,
       first: D.people.filter((p) => inX(p.week_joined)).length, became: D.history.filter((h) => h.category === 'Member' && inX(h.since) && h.note !== 'from sheet').length,
     };
   };
-  const a = stats(P), b = stats(Q);
+  const a = stats(A), b = stats(B);
   const f1 = (v) => (v == null ? '–' : v.toFixed(1));
   const rows = [
-    ['Sundays held', a.n, b.n, (v) => v],
+    ['Sundays held', a.n, b.n, (v) => v, false, true],
     ['Average present', a.present, b.present, f1],
     ['Leaders (avg present)', a.leaders, b.leaders, f1],
     ['Members (avg present)', a.members, b.members, f1],
@@ -441,15 +462,19 @@ function Compare({ idx, summaries, D, period, P, hq, style }) {
   ];
   return (
     <section className="card span2" style={style}>
-      <div className="card-head"><div><div className="card-title">{P.label} compared with {period.kind === 'last12' ? 'the year before' : Q.label}</div>
-        <div className="card-sub">Averages per Sunday. Pick Whole year, 12 months or a semester at the top to compare a longer stretch.</div></div></div>
-      {!b.n && <p className="muted small">No Sundays recorded in {Q.label} – nothing to compare with yet.</p>}
+      <div className="card-head"><div><div className="card-title">{monthLabel(A)} compared with {monthLabel(B)}</div>
+        <div className="card-sub">Averages per Sunday. Pick another month to compare it with the month before.</div></div>
+        <select className="small-select" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Month to compare">
+          {months.map((m) => <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{monthLabel(m)}</option>)}
+        </select>
+      </div>
+      {!b.n && <p className="muted small">No Sundays recorded in {monthLabel(B)} – nothing to compare with.</p>}
       <div style={{ overflowX: 'auto' }}>
         <table className="gtable compare">
-          <thead><tr><th /><th>{P.label}</th><th>{period.kind === 'last12' ? 'Year before' : Q.label}</th><th>Change</th></tr></thead>
-          <tbody>{rows.map(([l, x, y, fmt, isRate]) => (
+          <thead><tr><th /><th>{monthLabel(A)}</th><th>{monthLabel(B)}</th><th>Change</th></tr></thead>
+          <tbody>{rows.map(([l, x, y, fmt, isRate, plain]) => (
             <tr key={l}><td>{l}</td><td className="num"><b>{fmt(x)}</b></td><td className="num muted">{fmt(y)}</td>
-              <td className="num">{x != null && y != null && b.n ? <Delta d={isRate ? (x - y) * 100 : x - y} suffix={isRate ? ' pts' : ''} /> : <span className="faint">–</span>}</td></tr>
+              <td className="num">{!plain && x != null && y != null && b.n ? <Delta d={isRate ? (x - y) * 100 : x - y} suffix={isRate ? ' pts' : ''} /> : <span className="faint">–</span>}</td></tr>
           ))}</tbody>
         </table>
       </div>

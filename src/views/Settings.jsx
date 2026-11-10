@@ -154,8 +154,8 @@ function Dashboards({ cfg, save }) {
         <OrderList items={cfg.dash} flags={[['simple', 'Simple'], ['studio', 'Studio']]} onChange={(items) => save('dashboard', items.map(({ key, simple, studio }) => ({ key, simple, studio })), 'dashboard cards')} />
       </section>
       <section className="card">
-        <div className="card-head"><div><div className="card-title">Number tiles</div><div className="card-sub">The tiles under “Total present”. Center = the center’s own dashboard; HQ = a center opened from the HQ side.</div></div></div>
-        <OrderList items={cfg.tiles} flags={[['center', 'Center'], ['hq', 'HQ']]} onChange={(items) => save('tiles', items.map(({ key, center, hq }) => ({ key, center, hq })), 'number tiles')} />
+        <div className="card-head"><div><div className="card-title">Number tiles</div><div className="card-sub">The tiles under “Total present”. Center = the center’s own dashboard; HQ = a center opened from the HQ side; “vs last week” adds the change since the Sunday before.</div></div></div>
+        <OrderList items={cfg.tiles} flags={[['center', 'Center'], ['hq', 'HQ'], ['delta', 'vs last week']]} onChange={(items) => save('tiles', items.map(({ key, center, hq, delta }) => ({ key, center, hq, delta })), 'number tiles')} />
       </section>
       <section className="card">
         <div className="card-head"><div><div className="card-title">HQ overview · cards</div><div className="card-sub">The first page of the HQ side.</div></div></div>

@@ -35,7 +35,7 @@ export const DASH_CARDS = [
   ['kpis', 'Number tiles (top)', true, true],
   ['bars', 'Who came each Sunday (bar chart)', true, true],
   ['rate', 'Leaders & members rate (lines)', true, true],
-  ['compare', 'Compared with a year earlier', true, true],
+  ['compare', 'This month compared with the month before', true, true],
   ['groups', 'Groups on the Sunday (table)', false, true],
   ['newcomers', 'New comers', true, true],
   ['programs', 'Programs', true, true],
@@ -46,14 +46,14 @@ export const DASH_CARDS = [
 ];
 /* number tiles; center = the center's own dashboard, hq = a center opened from the HQ side */
 export const KPI_TILES = [
-  ['rate', 'Leaders & members rate', true, false],
-  ['leaders', 'Leaders', true, true],
-  ['members', 'Members', true, true],
-  ['informalnc', 'Informal & new comers (together)', true, false],
-  ['informal', 'Informal members', false, true],
-  ['others', 'Others', false, true],
-  ['firsttime', 'First-time comers', false, true],
-  ['needcall', 'Need a call', true, true],
+  ['rate', 'Leaders & members rate', true, false, true],
+  ['leaders', 'Leaders', true, true, true],
+  ['members', 'Members', true, true, true],
+  ['informalnc', 'Informal & new comers (together)', true, false, true],
+  ['informal', 'Informal members', false, true, true],
+  ['others', 'Others', false, true, true],
+  ['firsttime', 'First-time comers', false, true, false],
+  ['needcall', 'Need a call', true, true, false],
 ];
 /* HQ overview cards */
 export const HQ_CARDS = [
@@ -98,7 +98,7 @@ export function buildConfig(capRows, settings = {}) {
     fromDb: !!capRows,
     caps,
     dash: pick(DASH_CARDS, settings.dashboard, ['simple', 'studio']),
-    tiles: pick(KPI_TILES, settings.tiles, ['center', 'hq']),
+    tiles: pick(KPI_TILES, settings.tiles, ['center', 'hq', 'delta']),
     hqCards: pick(HQ_CARDS, settings.hq_dashboard, ['on']),
     people: pick(PEOPLE_COLS, settings.people_columns, ['simple', 'studio']),
     downloads: Object.fromEntries(DOWNLOADS.map(([k]) => [k, { on: true, hide: [], roles: null, ...(settings.downloads?.[k] || {}) }])),
